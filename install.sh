@@ -1,61 +1,82 @@
 #!/bin/bash
-set -e
 
 REPO="itsmanuelbaby/tradingview2claude-connector-mac"
 APP_NAME="TradingView2Claude Connector"
-INSTALL_DIR="/Applications"
 
+clear
+echo ""
+echo "  +==============================================+"
+echo "  |    TradingView2Claude Connector             |"
+echo "  |    Installazione automatica                 |"
+echo "  +==============================================+"
+echo ""
+
+# Controllo macOS
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "  ERRORE: Questo installer funziona solo su macOS."
+  exit 1
+fi
+
+# Architettura
 ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
   DMG_NAME="TradingView2Claude-arm64.dmg"
 else
   DMG_NAME="TradingView2Claude-x64.dmg"
 fi
-
-echo ""
-echo "  TradingView2Claude Connector — Installer"
-echo "  Architettura: $ARCH"
+echo "  Architettura rilevata: $ARCH"
 echo ""
 
+# Download
 DMG_URL="https://github.com/${REPO}/releases/latest/download/${DMG_NAME}"
 TMP_DMG="/tmp/${DMG_NAME}"
 
-echo "  Scarico $DMG_NAME..."
-curl -L --progress-bar "$DMG_URL" -o "$TMP_DMG"
+echo "  [1/4] Download in corso..."
+if ! curl -fsSL --progress-bar "$DMG_URL" -o "$TMP_DMG"; then
+  echo "  ERRORE: Download fallito. Controlla la connessione."
+  exit 1
+fi
+echo ""
 
-echo "  Monto il DMG..."
-# Usa -plist per parsare correttamente i path con spazi
+# Mount
+echo "  [2/4] Apertura pacchetto..."
 MOUNT_OUTPUT=$(hdiutil attach "$TMP_DMG" -nobrowse -noautoopen -plist 2>/dev/null)
 MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | grep -A1 '<key>mount-point</key>' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
 
 if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
-  echo "  ERRORE: Impossibile determinare il punto di mount"
+  echo "  ERRORE: Impossibile aprire il pacchetto di installazione."
+  rm -f "$TMP_DMG"
   exit 1
 fi
-
-echo "  Mount point: $MOUNT_POINT"
 
 APP_IN_DMG=$(find "$MOUNT_POINT" -name "*.app" -maxdepth 2 | head -1)
-
 if [ -z "$APP_IN_DMG" ]; then
-  echo "  ERRORE: App non trovata nel DMG"
+  echo "  ERRORE: File app non trovato."
   hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
+  rm -f "$TMP_DMG"
   exit 1
 fi
 
-TARGET="${INSTALL_DIR}/${APP_NAME}.app"
+# Installa
+echo "  [3/4] Installazione in /Applications..."
+TARGET="/Applications/${APP_NAME}.app"
+if [ -d "$TARGET" ]; then
+  rm -rf "$TARGET"
+fi
 
-echo "  Installo..."
-[ -d "$TARGET" ] && rm -rf "$TARGET"
-cp -R "$APP_IN_DMG" "$INSTALL_DIR/" || sudo cp -R "$APP_IN_DMG" "$INSTALL_DIR/"
-
+if ! cp -R "$APP_IN_DMG" /Applications/ 2>/dev/null; then
+  sudo cp -R "$APP_IN_DMG" /Applications/
+fi
 xattr -cr "$TARGET" 2>/dev/null || sudo xattr -cr "$TARGET" 2>/dev/null || true
 
+# Cleanup
 hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
 rm -f "$TMP_DMG"
 
+echo "  [4/4] Pulizia completata."
 echo ""
-echo "  Installazione completata!"
+echo "  ✓ TradingView2Claude Connector installato!"
 echo ""
+echo "  Avvio in corso..."
 sleep 1
 open "$TARGET"
