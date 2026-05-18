@@ -36,11 +36,7 @@
     },
     "dmg": {
       "title": "TradingView2Claude Connector",
-      "backgroundColor": "#141414",
-      "window": {
-        "width": 540,
-        "height": 380
-      }
+      "writeUpdateInfo": false
     },
     "extraResources": [
       {
