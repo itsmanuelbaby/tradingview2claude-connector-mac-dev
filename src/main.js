@@ -116,7 +116,10 @@ function createWindow() {
 
 // ── Trova Claude (Mac) ───────────────────────────────────────────
 async function findClaude() {
-  // 1. Claude Code CLI (npm global)
+  // 1. Installazione nativa ufficiale (~/.local/bin)
+  const localBin = path.join(HOME, '.local', 'bin', 'claude');
+  if (fs.existsSync(localBin)) return localBin;
+  // 2. Claude Code CLI (npm/homebrew)
   const npmPaths = [
     '/usr/local/bin/claude',
     '/opt/homebrew/bin/claude',
@@ -126,7 +129,7 @@ async function findClaude() {
   for (const p of npmPaths) {
     if (fs.existsSync(p)) return p;
   }
-  // 2. which claude
+  // 3. which claude
   const w = await runQ('which claude');
   if (w && fs.existsSync(w)) return w;
   return null;
@@ -545,6 +548,10 @@ async function step7_launcher(claudePath, tvPath, mcpDir) {
     '  exit 1',
     'fi',
     'LICENSE_KEY=$(grep -o \'"key":"[^"]*"\' "$LICENSE_FILE" | cut -d\'"\' -f4)',
+    'if [ -z "$LICENSE_KEY" ]; then',
+    '  echo "  ✕ File licenza non valido. Reinstalla TradingView2Claude Connector."',
+    '  exit 1',
+    'fi',
     'UUID=$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | grep IOPlatformUUID | grep -o \'"[A-F0-9-]*"\' | tr -d \'"\')',
     'if [ -n "$UUID" ]; then',
     '  MACHINE_ID=$(echo -n "$UUID" | openssl dgst -sha256 | awk \'{print $2}\' | cut -c1-32)',
