@@ -536,7 +536,7 @@ async function step7_launcher(claudePath, tvPath, mcpDir) {
     'clear',
     'echo ""',
     'echo "  +==============================================+"',
-    'echo "  |      TradingView2Claude Connector          |"',
+   `echo "  |    TradingView2Claude Connector  v${app.getVersion()}     |"`,
     'echo "  +==============================================+"',
     'echo ""',
     '',
