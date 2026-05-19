@@ -310,21 +310,32 @@ async function step3_claude() {
     if (fs.existsSync(p)) { npmBin = p; break; }
   }
   if (!npmBin) npmBin = await runQ('which npm');
+  const nodeBin = getBundledNodePath();
+  const nodeDir = nodeBin ? path.dirname(nodeBin) : null;
+  // PATH con node bundled incluso — necessario per npm postinstall che chiama "node install.cjs" via sh
+  const envWithNode = nodeDir
+    ? { PATH: `${nodeDir}:${process.env.PATH || ''}` }
+    : {};
+
   if (!npmBin) {
     // Usa npm bundled con node bundled
-    const nodeBin = getBundledNodePath();
     if (nodeBin) {
-      const nodeDir = path.dirname(nodeBin);
       const bundledNpm = path.join(
         app.isPackaged ? process.resourcesPath : path.join(__dirname, '..'),
         'bundled-node', 'npm_modules', 'bin', 'npm-cli.js'
       );
       if (fs.existsSync(bundledNpm)) {
-        await run(nodeBin, [bundledNpm, 'install', '-g', '@anthropic-ai/claude-code'], { ignoreError: false });
+        await run(nodeBin, [bundledNpm, 'install', '-g', '@anthropic-ai/claude-code'], {
+          ignoreError: false,
+          env: envWithNode,
+        });
       }
     }
   } else {
-    await run(npmBin, ['install', '-g', '@anthropic-ai/claude-code'], { ignoreError: false });
+    await run(npmBin, ['install', '-g', '@anthropic-ai/claude-code'], {
+      ignoreError: false,
+      env: envWithNode,
+    });
   }
 
   // Riprova a trovare Claude
