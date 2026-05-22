@@ -343,6 +343,40 @@ body {
   max-width: 340px;
 }
 .tv-note b { color: var(--lg); font-weight: 600; }
+.tv-spin {
+  width: 30px; height: 30px;
+  border: 3px solid var(--bord2);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  display: none;
+}
+.tv-spin.show { display: block; }
+
+/* ─── modalità agganciata (TradingView in finestra separata) ─── */
+body.docked #pane-tv { display: none; }
+body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
+
+/* ─── banner permesso accessibilità ─── */
+#acc-banner {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  background: rgba(212,160,23,.10);
+  border-bottom: 1px solid rgba(212,160,23,.35);
+  padding: 9px 13px;
+}
+#acc-banner.show { display: flex; }
+#acc-banner .acc-txt { flex: 1; font-size: 11px; color: var(--gold2); line-height: 1.5; }
+#acc-banner button {
+  -webkit-app-region: no-drag;
+  background: var(--gold); color: #1A1206;
+  border: none; border-radius: 6px;
+  padding: 6px 11px; font-size: 10.5px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+#acc-banner button:hover { background: var(--gold2); }
 </style>
 </head>
 <body>
@@ -362,6 +396,10 @@ body {
 
   <!-- ─── CHAT ─── -->
   <div id="pane-chat">
+    <div id="acc-banner">
+      <span class="acc-txt">Per affiancare TradingView serve il permesso "Accessibilità" di macOS.</span>
+      <button id="acc-btn">Apri Impostazioni</button>
+    </div>
     <div class="chat-head">
       <span class="hex">⬡</span>
       <span class="title">Assistente di mercato</span>
@@ -401,6 +439,7 @@ body {
       <span class="tv-tag">ANTEPRIMA</span>
     </div>
     <div class="tv-body">
+      <div id="tv-spin" class="tv-spin"></div>
       <svg class="mock-chart" viewBox="0 0 460 200" fill="none">
         <line x1="0" y1="50"  x2="460" y2="50"  stroke="#1E1E1E"/>
         <line x1="0" y1="100" x2="460" y2="100" stroke="#1E1E1E"/>
@@ -419,9 +458,9 @@ body {
           <line x1="430" y1="48"  x2="430" y2="100" stroke="#4CAF50"/><rect x="425" y="56"  width="10" height="30" fill="#4CAF50"/>
         </g>
       </svg>
-      <div class="tv-note">
+      <div id="tv-note" class="tv-note">
         Qui verrà mostrato <b>TradingView</b>.<br>
-        In questa anteprima è un segnaposto: nella versione finale il grafico reale occuperà questo spazio.
+        All'avvio viene aperto e affiancato automaticamente.
       </div>
     </div>
   </div>
@@ -603,36 +642,78 @@ body {
     ipc.send('chat:send', text);
   }
 
+  // ── LAYOUT: stato di TradingView (Fase 3) ──
+  let dockedMode  = false;
+  const tvSpin    = document.getElementById('tv-spin');
+  const tvNote    = document.getElementById('tv-note');
+  const accBanner = document.getElementById('acc-banner');
+  const accBtn    = document.getElementById('acc-btn');
+
+  function reasonText(reason) {
+    if (reason === 'not-installed')
+      return 'TradingView non è installato.<br>Scaricalo da <b>tradingview.com/desktop</b>, poi riavvia l\'app.';
+    if (reason === 'timeout')
+      return 'TradingView non ha risposto in tempo.<br>Aprilo manualmente, poi riavvia l\'app.';
+    return 'Impossibile preparare TradingView automaticamente.<br>Aprilo manualmente, poi riavvia l\'app.';
+  }
+
+  ipc.on('layout:status', function (e, text) {
+    if (tvSpin) tvSpin.classList.add('show');
+    if (tvNote) tvNote.textContent = text || 'Preparazione…';
+  });
+  ipc.on('layout:mode', function (e, info) {
+    if (tvSpin) tvSpin.classList.remove('show');
+    if (info && info.docked) {
+      dockedMode = true;
+      document.body.classList.add('docked');
+      if (info.accessibilityNeeded && accBanner) accBanner.classList.add('show');
+    } else {
+      dockedMode = false;
+      if (tvNote) tvNote.innerHTML = reasonText(info && info.reason);
+    }
+  });
+  if (accBtn) accBtn.addEventListener('click', function () {
+    ipc.send('dash:open-accessibility');
+  });
+
   // ── DIVISORE trascinabile ──
-  const split   = document.getElementById('split');
-  const paneChat= document.getElementById('pane-chat');
-  const divider = document.getElementById('divider');
+  const split    = document.getElementById('split');
+  const paneChat = document.getElementById('pane-chat');
+  const divider  = document.getElementById('divider');
   let dragging = false;
 
-  divider.addEventListener('mousedown', function () {
+  divider.addEventListener('pointerdown', function (e) {
     dragging = true;
+    try { divider.setPointerCapture(e.pointerId); } catch (_) {}
     divider.classList.add('active');
-    document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   });
-  window.addEventListener('mousemove', function (e) {
+  divider.addEventListener('pointermove', function (e) {
     if (!dragging) return;
-    const rect = split.getBoundingClientRect();
-    let w = e.clientX - rect.left;
-    const min = 340, max = rect.width - 360;
-    if (w < min) w = min;
-    if (w > max) w = max;
-    paneChat.style.width = w + 'px';
+    if (dockedMode) {
+      // ridimensiona la finestra (TradingView si riadatta al rilascio)
+      ipc.send('dash:resize', e.screenX);
+    } else {
+      // anteprima: ridimensiona i pannelli interni
+      const rect = split.getBoundingClientRect();
+      let w = e.clientX - rect.left;
+      w = Math.max(340, Math.min(w, rect.width - 360));
+      paneChat.style.width = w + 'px';
+    }
   });
-  window.addEventListener('mouseup', function () {
+  divider.addEventListener('pointerup', function (e) {
     if (!dragging) return;
     dragging = false;
+    try { divider.releasePointerCapture(e.pointerId); } catch (_) {}
     divider.classList.remove('active');
-    document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    if (dockedMode) ipc.send('dash:resize-end');
   });
 
   input.focus();
+
+  // Segnala al processo principale che la dashboard è pronta
+  ipc.send('dash:ready');
 })();
 </script>
 </body>

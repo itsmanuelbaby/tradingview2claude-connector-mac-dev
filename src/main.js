@@ -12,6 +12,7 @@ const fs     = require('fs');
 const os     = require('os');
 const crypto = require('crypto');
 const claudeEngine = require('./claude-engine');
+const windowManager = require('./window-manager');
 
 // ── Costanti ─────────────────────────────────────────────────────
 const HOME    = os.homedir();
@@ -121,7 +122,7 @@ let dashWin = null;
 function createDashboardWindow() {
   dashWin = new BrowserWindow({
     width: 1120, height: 760,
-    minWidth: 860, minHeight: 560,
+    minWidth: 380, minHeight: 480,
     frame: false,
     backgroundColor: '#0D0D0D',
     webPreferences: {
@@ -132,6 +133,87 @@ function createDashboardWindow() {
   dashWin.loadFile(path.join(__dirname, 'dashboard.html'));
   dashWin.on('closed', () => { dashWin = null; });
 }
+
+// ── Layout dashboard + TradingView affiancato (Fase 3) ───────────
+let curChatWidth = 0;
+
+function sendDash(channel, payload) {
+  if (dashWin && !dashWin.isDestroyed()) {
+    dashWin.webContents.send(channel, payload);
+  }
+}
+
+async function setupDashboardLayout() {
+  try {
+    sendDash('layout:status', 'Preparazione di TradingView…');
+    const tv = await windowManager.ensureTradingView(
+      (s) => sendDash('layout:status', s)
+    );
+
+    if (!tv.ok) {
+      // Fallback: TradingView non disponibile — la finestra resta com'è
+      writeLog(`[layout] TradingView non pronto: ${tv.error}`);
+      sendDash('layout:mode', { docked: false, reason: tv.error });
+      return;
+    }
+
+    // TradingView pronto → aggancia: la nostra finestra a sinistra
+    const wa = windowManager.workArea();
+    let chatWidth = Math.round(wa.width * 0.34);
+    chatWidth = Math.max(520, Math.min(chatWidth, wa.width - 480));
+    curChatWidth = chatWidth;
+
+    if (dashWin && !dashWin.isDestroyed()) {
+      dashWin.setBounds({ x: wa.x, y: wa.y, width: chatWidth, height: wa.height });
+      dashWin.setResizable(false);
+      dashWin.setMovable(false);
+    }
+
+    const pos = await windowManager.positionTradingView({
+      x: wa.x + chatWidth, y: wa.y,
+      width: wa.width - chatWidth, height: wa.height,
+    });
+    writeLog(`[layout] posizionamento TradingView: ${JSON.stringify(pos)}`);
+
+    sendDash('layout:mode', {
+      docked: true,
+      accessibilityNeeded: !pos.ok && pos.error === 'accessibility',
+    });
+    if (dashWin && !dashWin.isDestroyed()) dashWin.focus();
+  } catch (e) {
+    writeLog(`[layout] errore: ${e.message}`);
+    sendDash('layout:mode', { docked: false, reason: 'error' });
+  }
+}
+
+// La dashboard segnala di essere pronta → avvia il layout
+ipcMain.on('dash:ready', () => { setupDashboardLayout(); });
+
+// Trascinamento del divisore → ridimensiona la nostra finestra
+ipcMain.on('dash:resize', (_e, screenX) => {
+  if (!dashWin || dashWin.isDestroyed()) return;
+  const wa = windowManager.workArea();
+  let w = Math.round(screenX - wa.x);
+  w = Math.max(420, Math.min(w, wa.width - 480));
+  curChatWidth = w;
+  dashWin.setBounds({ x: wa.x, y: wa.y, width: w, height: wa.height });
+});
+
+// Fine trascinamento → riposiziona TradingView nello spazio restante
+ipcMain.on('dash:resize-end', async () => {
+  const wa = windowManager.workArea();
+  await windowManager.positionTradingView({
+    x: wa.x + curChatWidth, y: wa.y,
+    width: wa.width - curChatWidth, height: wa.height,
+  });
+});
+
+// Apre le impostazioni Accessibilità di macOS
+ipcMain.on('dash:open-accessibility', () => {
+  shell.openExternal(
+    'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+  );
+});
 
 // ── Trova Claude (Mac) ───────────────────────────────────────────
 async function findClaude() {
