@@ -11,6 +11,7 @@ const { spawn, execSync } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
+const memory = require('./memory');
 
 const HOME = os.homedir();
 const LOG_DIR  = path.join(HOME, 'Library', 'Logs', 'TradingView2Claude Dev');
@@ -96,6 +97,12 @@ function friendlyTool(name) {
   return 'Sto consultando TradingView…';
 }
 
+// ── Rimuove le righe [LEZIONE] dal testo mostrato all'utente ─────
+// (le lezioni vengono salvate nel vault, non mostrate in chat)
+function stripLessons(text) {
+  return String(text || '').replace(/^[ \t]*\[LEZIONE\][^\n]*\n?/gim, '');
+}
+
 // ── Interpreta una riga NDJSON dello stream ──────────────────────
 function handleLine(line, state, handlers) {
   let msg;
@@ -112,7 +119,9 @@ function handleLine(line, state, handlers) {
     for (const block of msg.message.content) {
       if (block.type === 'text' && block.text) {
         state.gotText = true;
-        handlers.onText(block.text);
+        state.rawAnswer += block.text;
+        const shown = stripLessons(block.text);
+        if (shown.trim()) handlers.onText(shown);
       } else if (block.type === 'tool_use') {
         handlers.onTool(friendlyTool(block.name));
       }
@@ -130,7 +139,9 @@ function handleLine(line, state, handlers) {
                typeof msg.result === 'string' && msg.result.trim()) {
       // Sicurezza: nessun testo nei messaggi 'assistant' → usa il risultato finale
       state.gotText = true;
-      handlers.onText(msg.result);
+      state.rawAnswer += msg.result;
+      const shown = stripLessons(msg.result);
+      if (shown.trim()) handlers.onText(shown);
     }
     return;
   }
@@ -146,8 +157,15 @@ function ask(userMessage, handlers) {
     return;
   }
 
+  // Reinietta la memoria: lezioni apprese + analisi passate rilevanti
+  let prompt = userMessage;
+  try {
+    const ctx = memory.buildContext(userMessage);
+    if (ctx) prompt = ctx + '\n\n# DOMANDA ATTUALE\n' + userMessage;
+  } catch (e) { log('memory context error: ' + e.message); }
+
   const args = [
-    '-p', userMessage,
+    '-p', prompt,
     '--output-format', 'stream-json',
     '--verbose',
     '--allowedTools', 'mcp__tradingview-mcp__*',
@@ -173,7 +191,7 @@ function ask(userMessage, handlers) {
     return;
   }
 
-  const state = { gotText: false, resultError: null, finished: false };
+  const state = { gotText: false, resultError: null, finished: false, rawAnswer: '' };
   let stdoutBuf = '';
   let stderrBuf = '';
 
@@ -186,8 +204,18 @@ function ask(userMessage, handlers) {
     if (state.finished) return;
     state.finished = true;
     clearTimeout(timer);
-    if (errMsg) handlers.onError(errMsg);
-    else handlers.onDone();
+    if (errMsg) {
+      handlers.onError(errMsg);
+      return;
+    }
+    // Successo → salva l'analisi nel vault ed estrai eventuali lezioni
+    if (state.rawAnswer.trim()) {
+      try {
+        memory.extractLessons(state.rawAnswer);
+        memory.saveNote(userMessage, stripLessons(state.rawAnswer).trim());
+      } catch (e) { log('memory save error: ' + e.message); }
+    }
+    handlers.onDone();
   }
 
   child.stdout.on('data', (d) => {

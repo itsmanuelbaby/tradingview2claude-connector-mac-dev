@@ -479,6 +479,7 @@ app.whenReady().then(async () => {
   writeLog('=== APP AVVIATA ===');
   writeLog(`Versione: ${app.getVersion()}`);
   writeLog(`Architettura: ${process.arch}`);
+  try { require('./memory').ensureVault(); } catch (_) {}
 
   // Flusso di avvio: dashboard solo se licenza valida e setup completo,
   // altrimenti schermata di setup/licenza.
