@@ -251,59 +251,35 @@ async function step3_claude() {
     return claudePath;
   }
 
-  sendLog('Installazione Claude Code in corso...', mainWin);
+  sendLog('Installazione di Claude Code in corso...', mainWin);
 
-  // Determina npm
-  const npmPaths = [
-    '/usr/local/bin/npm',
-    '/opt/homebrew/bin/npm',
-  ];
-  let npmBin = null;
-  for (const p of npmPaths) {
-    if (fs.existsSync(p)) { npmBin = p; break; }
-  }
-  if (!npmBin) npmBin = await runQ('which npm');
-  const nodeBin = getBundledNodePath();
-  const nodeDir = nodeBin ? path.dirname(nodeBin) : null;
-  // PATH con node bundled incluso — necessario per npm postinstall che chiama "node install.cjs" via sh
-  const envWithNode = nodeDir
-    ? { PATH: `${nodeDir}:${process.env.PATH || ''}` }
-    : {};
-
-  if (!npmBin) {
-    // Usa npm bundled con node bundled
-    if (nodeBin) {
-      const bundledNpm = path.join(
-        app.isPackaged ? process.resourcesPath : path.join(__dirname, '..'),
-        'bundled-node', 'npm_modules', 'bin', 'npm-cli.js'
-      );
-      if (fs.existsSync(bundledNpm)) {
-        await run(nodeBin, [bundledNpm, 'install', '-g', '@anthropic-ai/claude-code'], {
-          ignoreError: false,
-          env: envWithNode,
-        });
-      }
-    }
-  } else {
-    await run(npmBin, ['install', '-g', '@anthropic-ai/claude-code'], {
-      ignoreError: false,
-      env: envWithNode,
-    });
+  // Installer nativo ufficiale: scarica un binario autonomo in ~/.local/bin.
+  // Non richiede né Node.js né npm — funziona su qualunque Mac.
+  const safeEnv = {
+    PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:'
+        + (process.env.PATH || ''),
+  };
+  try {
+    await run('/bin/bash',
+      ['-c', 'curl -fsSL https://claude.ai/install.sh | bash'],
+      { cwd: HOME, env: safeEnv, ignoreError: false });
+  } catch (e) {
+    writeLog(`[step3] installer nativo: ${e.message}`);
   }
 
-  // Riprova a trovare Claude
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise(r => setTimeout(r, 2000));
   claudePath = await findClaude();
-  if (!claudePath) {
-    throw new Error(
-      'Claude Code non trovato dopo installazione.\n' +
-      'Riprova o installalo manualmente con:\n' +
-      'npm install -g @anthropic-ai/claude-code'
-    );
+  if (claudePath) {
+    sendLog(`Claude Code installato: ${claudePath}`, mainWin);
+    return claudePath;
   }
 
-  sendLog(`Claude Code installato: ${claudePath}`, mainWin);
-  return claudePath;
+  throw new Error(
+    'Non è stato possibile installare Claude Code automaticamente.\n\n' +
+    'Apri il Terminale, incolla questo comando e premi Invio:\n' +
+    '  curl -fsSL https://claude.ai/install.sh | bash\n\n' +
+    'Al termine, torna qui e premi "Riprova".'
+  );
 }
 
 // ── Step: configura l'assistente (registra l'MCP bundled) ────────
