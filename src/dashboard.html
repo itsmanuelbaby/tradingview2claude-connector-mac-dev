@@ -2,8 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
-<title>TradingView2Claude Connector</title>
+<title>Connector</title>
 <style>
 /* ══════════════ RESET & VARIABILI ══════════════ */
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -176,15 +175,6 @@ body {
   border-top-right-radius: 3px;
   color: #FBEFD2;
 }
-.bubble .cursor {
-  display: inline-block;
-  width: 7px; height: 14px;
-  background: var(--gold);
-  vertical-align: -2px;
-  margin-left: 1px;
-  animation: blink .9s steps(2) infinite;
-}
-@keyframes blink { 0%,50%{opacity:1;} 50.1%,100%{opacity:0;} }
 .bubble.err {
   border-color: rgba(244,67,54,.40) !important;
   background: rgba(244,67,54,.08) !important;
@@ -292,98 +282,50 @@ body {
 }
 #divider:hover::after, #divider.active::after { background: #1A1206; }
 
-/* ─── PANNELLO TRADINGVIEW (segnaposto Fase 1) ─── */
+/* overlay attivo durante il trascinamento (cattura il mouse sopra il webview) */
+#drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  cursor: col-resize;
+  display: none;
+}
+#drag-overlay.active { display: block; }
+
+/* ─── PANNELLO TRADINGVIEW (incorporato) ─── */
 #pane-tv {
   flex: 1;
-  min-width: 360px;
-  display: flex;
-  flex-direction: column;
+  min-width: 380px;
+  position: relative;
   background: var(--surf);
   min-height: 0;
 }
-.tv-head {
-  height: 46px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 18px;
-  border-bottom: 1px solid var(--bord);
-  background: #0F0F0F;
+#tv-view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
-.tv-head .tv-mark { color: var(--cyan); font-weight: 700; font-size: 12.5px; letter-spacing: .3px; }
-.tv-head .tv-sym { font-size: 11px; color: var(--gray); }
-.tv-head .tv-tag {
-  margin-left: auto;
-  font-size: 9px;
-  color: var(--gold);
-  border: 1px solid rgba(212,160,23,.4);
-  border-radius: 4px;
-  padding: 2px 7px;
-  letter-spacing: 1px;
-}
-.tv-body {
-  flex: 1;
+#tv-loading {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 30px;
-  position: relative;
-  overflow: hidden;
+  gap: 15px;
+  background: var(--surf);
+  z-index: 5;
 }
-/* grafico finto */
-.mock-chart { width: 100%; max-width: 460px; opacity: .55; }
-.tv-note {
-  text-align: center;
-  font-size: 12px;
-  color: var(--gray);
-  line-height: 1.7;
-  max-width: 340px;
-}
-.tv-note b { color: var(--lg); font-weight: 600; }
+#tv-loading.hidden { display: none; }
 .tv-spin {
-  width: 30px; height: 30px;
+  width: 32px; height: 32px;
   border: 3px solid var(--bord2);
   border-top-color: var(--cyan);
   border-radius: 50%;
   animation: spin .8s linear infinite;
-  display: none;
 }
-.tv-spin.show { display: block; }
-
-/* ─── modalità agganciata (TradingView in finestra separata) ─── */
-body.docked #pane-tv { display: none; }
-body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
-
-/* ─── banner permesso accessibilità ─── */
-#acc-banner {
-  display: none;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 10px;
-  background: rgba(212,160,23,.10);
-  border-bottom: 1px solid rgba(212,160,23,.35);
-  padding: 9px 13px;
-}
-#acc-banner.show { display: flex; }
-#acc-banner .acc-txt { flex: 1; font-size: 11px; color: var(--gold2); line-height: 1.5; }
-#acc-banner button {
-  -webkit-app-region: no-drag;
-  background: var(--gold); color: #1A1206;
-  border: none; border-radius: 6px;
-  padding: 6px 11px; font-size: 10.5px; font-weight: 600;
-  cursor: pointer; white-space: nowrap;
-}
-#acc-banner button:hover { background: var(--gold2); }
-#acc-banner #acc-close {
-  background: transparent;
-  color: var(--gold2);
-  font-size: 13px;
-  padding: 4px 6px;
-}
-#acc-banner #acc-close:hover { background: rgba(212,160,23,.20); }
+.tv-load-txt { font-size: 12px; color: var(--gray); }
 </style>
 </head>
 <body>
@@ -403,11 +345,6 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
 
   <!-- ─── CHAT ─── -->
   <div id="pane-chat">
-    <div id="acc-banner">
-      <span class="acc-txt">Per affiancare TradingView attiva il permesso «Accessibilità» — l'app si aggancia da sola appena concesso.</span>
-      <button id="acc-btn">Apri Impostazioni</button>
-      <button id="acc-close" title="Ignora">✕</button>
-    </div>
     <div class="chat-head">
       <span class="hex">⬡</span>
       <span class="title">Assistente di mercato</span>
@@ -439,50 +376,32 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
   <!-- ─── DIVISORE ─── -->
   <div id="divider" title="Trascina per regolare lo spazio"></div>
 
-  <!-- ─── TRADINGVIEW (segnaposto) ─── -->
+  <!-- ─── TRADINGVIEW INCORPORATO ─── -->
   <div id="pane-tv">
-    <div class="tv-head">
-      <span class="tv-mark">TradingView</span>
-      <span class="tv-sym">— in attesa</span>
-      <span class="tv-tag">ANTEPRIMA</span>
-    </div>
-    <div class="tv-body">
-      <div id="tv-spin" class="tv-spin"></div>
-      <svg class="mock-chart" viewBox="0 0 460 200" fill="none">
-        <line x1="0" y1="50"  x2="460" y2="50"  stroke="#1E1E1E"/>
-        <line x1="0" y1="100" x2="460" y2="100" stroke="#1E1E1E"/>
-        <line x1="0" y1="150" x2="460" y2="150" stroke="#1E1E1E"/>
-        <g stroke-width="6">
-          <line x1="30"  y1="70"  x2="30"  y2="130" stroke="#4CAF50"/><rect x="25"  y="85"  width="10" height="30" fill="#4CAF50"/>
-          <line x1="70"  y1="60"  x2="70"  y2="120" stroke="#4CAF50"/><rect x="65"  y="72"  width="10" height="34" fill="#4CAF50"/>
-          <line x1="110" y1="75"  x2="110" y2="135" stroke="#F44336"/><rect x="105" y="88"  width="10" height="32" fill="#F44336"/>
-          <line x1="150" y1="55"  x2="150" y2="115" stroke="#4CAF50"/><rect x="145" y="66"  width="10" height="38" fill="#4CAF50"/>
-          <line x1="190" y1="45"  x2="190" y2="100" stroke="#4CAF50"/><rect x="185" y="55"  width="10" height="34" fill="#4CAF50"/>
-          <line x1="230" y1="60"  x2="230" y2="120" stroke="#F44336"/><rect x="225" y="72"  width="10" height="36" fill="#F44336"/>
-          <line x1="270" y1="50"  x2="270" y2="110" stroke="#4CAF50"/><rect x="265" y="62"  width="10" height="34" fill="#4CAF50"/>
-          <line x1="310" y1="40"  x2="310" y2="95"  stroke="#4CAF50"/><rect x="305" y="50"  width="10" height="32" fill="#4CAF50"/>
-          <line x1="350" y1="55"  x2="350" y2="115" stroke="#F44336"/><rect x="345" y="66"  width="10" height="38" fill="#F44336"/>
-          <line x1="390" y1="35"  x2="390" y2="90"  stroke="#4CAF50"/><rect x="385" y="46"  width="10" height="32" fill="#4CAF50"/>
-          <line x1="430" y1="48"  x2="430" y2="100" stroke="#4CAF50"/><rect x="425" y="56"  width="10" height="30" fill="#4CAF50"/>
-        </g>
-      </svg>
-      <div id="tv-note" class="tv-note">
-        Qui verrà mostrato <b>TradingView</b>.<br>
-        All'avvio viene aperto e affiancato automaticamente.
-      </div>
+    <webview id="tv-view"
+             src="https://www.tradingview.com/chart/"
+             partition="persist:tradingview"
+             allowpopups></webview>
+    <div id="tv-loading">
+      <div class="tv-spin"></div>
+      <div class="tv-load-txt">Caricamento di TradingView…</div>
     </div>
   </div>
 
 </div>
 
+<!-- overlay per il trascinamento del divisore -->
+<div id="drag-overlay"></div>
+
 <script>
 (function () {
   'use strict';
 
+  const ipc = require('electron').ipcRenderer;
+
   // ── chiusura finestra ──
   document.getElementById('btn-close').addEventListener('click', function () {
-    try { require('electron').ipcRenderer.send('close-app'); }
-    catch (e) { window.close(); }
+    ipc.send('close-app');
   });
 
   const messages = document.getElementById('messages');
@@ -544,15 +463,12 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
     return t;
   }
 
-  // ── motore Claude (IPC) ──
-  const ipc = require('electron').ipcRenderer;
-
-  // stato del turno corrente
-  let curBubble = null;   // bolla risposta in costruzione
-  let toolChip  = null;   // chip "sto usando uno strumento"
-  let streamBuf = '';     // testo in coda da animare
-  let draining  = false;  // animazione in corso
-  let turnDone  = false;  // il motore ha finito
+  // ── stato del turno corrente ──
+  let curBubble = null;
+  let toolChip  = null;
+  let streamBuf = '';
+  let draining  = false;
+  let turnDone  = false;
 
   function ensureBubble() {
     if (!curBubble) curBubble = addBot();
@@ -601,13 +517,13 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
     bubble.innerHTML = t;
   }
 
-  // eventi dal motore
+  // ── eventi dal motore Claude ──
   ipc.on('claude:text', function (e, chunk) {
     clearTool();
     enqueue(chunk);
   });
   ipc.on('claude:tool', function (e, label) {
-    if (curBubble) return; // sta già scrivendo la risposta
+    if (curBubble) return;
     if (!toolChip) toolChip = showTool(label);
     else toolChip.querySelector('span:last-child').textContent = label;
   });
@@ -640,7 +556,6 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
     input.value = '';
     autosize();
 
-    // reset stato turno
     curBubble = null;
     streamBuf = '';
     draining = false;
@@ -650,86 +565,47 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
     ipc.send('chat:send', text);
   }
 
-  // ── LAYOUT: stato di TradingView (Fase 3) ──
-  let dockedMode  = false;
-  const tvSpin    = document.getElementById('tv-spin');
-  const tvNote    = document.getElementById('tv-note');
-  const accBanner = document.getElementById('acc-banner');
-  const accBtn    = document.getElementById('acc-btn');
-
-  function reasonText(reason) {
-    if (reason === 'not-installed')
-      return 'TradingView non è installato.<br>Scaricalo da <b>tradingview.com/desktop</b>, poi riavvia l\'app.';
-    if (reason === 'timeout')
-      return 'TradingView non ha risposto in tempo.<br>Aprilo manualmente, poi riavvia l\'app.';
-    return 'Impossibile preparare TradingView automaticamente.<br>Aprilo manualmente, poi riavvia l\'app.';
+  // ── TRADINGVIEW incorporato: stato di caricamento ──
+  const tvView    = document.getElementById('tv-view');
+  const tvLoading = document.getElementById('tv-loading');
+  if (tvView) {
+    tvView.addEventListener('did-stop-loading', function () {
+      if (tvLoading) tvLoading.classList.add('hidden');
+    });
+    tvView.addEventListener('did-fail-load', function (e) {
+      if (e && e.errorCode === -3) return; // navigazione annullata
+      const txt = tvLoading && tvLoading.querySelector('.tv-load-txt');
+      if (txt) txt.textContent = 'Impossibile caricare TradingView. Controlla la connessione.';
+    });
   }
 
-  ipc.on('layout:status', function (e, text) {
-    if (tvSpin) tvSpin.classList.add('show');
-    if (tvNote) tvNote.textContent = text || 'Preparazione…';
-  });
-  ipc.on('layout:mode', function (e, info) {
-    if (tvSpin) tvSpin.classList.remove('show');
-    if (info && info.docked) {
-      dockedMode = true;
-      document.body.classList.add('docked');
-      if (info.accessibilityNeeded && accBanner) accBanner.classList.add('show');
-    } else {
-      dockedMode = false;
-      if (tvNote) tvNote.innerHTML = reasonText(info && info.reason);
-    }
-  });
-  if (accBtn) accBtn.addEventListener('click', function () {
-    ipc.send('dash:open-accessibility');
-  });
-  const accClose = document.getElementById('acc-close');
-  if (accClose) accClose.addEventListener('click', function () {
-    if (accBanner) accBanner.classList.remove('show');
-  });
-  // permesso concesso → TradingView agganciato automaticamente
-  ipc.on('layout:accessibility-ok', function () {
-    if (accBanner) accBanner.classList.remove('show');
-  });
-
-  // ── DIVISORE trascinabile ──
+  // ── DIVISORE trascinabile (ridimensiona i due pannelli) ──
   const split    = document.getElementById('split');
   const paneChat = document.getElementById('pane-chat');
   const divider  = document.getElementById('divider');
+  const overlay  = document.getElementById('drag-overlay');
   let dragging = false;
 
-  divider.addEventListener('pointerdown', function (e) {
+  divider.addEventListener('mousedown', function () {
     dragging = true;
-    try { divider.setPointerCapture(e.pointerId); } catch (_) {}
     divider.classList.add('active');
-    document.body.style.userSelect = 'none';
+    overlay.classList.add('active');
   });
-  divider.addEventListener('pointermove', function (e) {
+  window.addEventListener('mousemove', function (e) {
     if (!dragging) return;
-    if (dockedMode) {
-      // ridimensiona la finestra (TradingView si riadatta al rilascio)
-      ipc.send('dash:resize', e.screenX);
-    } else {
-      // anteprima: ridimensiona i pannelli interni
-      const rect = split.getBoundingClientRect();
-      let w = e.clientX - rect.left;
-      w = Math.max(340, Math.min(w, rect.width - 360));
-      paneChat.style.width = w + 'px';
-    }
+    const rect = split.getBoundingClientRect();
+    let w = e.clientX - rect.left;
+    w = Math.max(360, Math.min(w, rect.width - 420));
+    paneChat.style.width = w + 'px';
   });
-  divider.addEventListener('pointerup', function (e) {
+  window.addEventListener('mouseup', function () {
     if (!dragging) return;
     dragging = false;
-    try { divider.releasePointerCapture(e.pointerId); } catch (_) {}
     divider.classList.remove('active');
-    document.body.style.userSelect = '';
-    if (dockedMode) ipc.send('dash:resize-end');
+    overlay.classList.remove('active');
   });
 
   input.focus();
-
-  // Segnala al processo principale che la dashboard è pronta
-  ipc.send('dash:ready');
 })();
 </script>
 </body>

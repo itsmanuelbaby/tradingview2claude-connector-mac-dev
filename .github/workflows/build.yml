@@ -34,6 +34,8 @@ jobs:
       - name: Setup bundled-mcp
         run: |
           git clone https://github.com/LewisWJackson/tradingview-mcp-jackson bundled-mcp
+          # L'MCP deve riconoscere anche il TradingView incorporato (target CDP di tipo "webview")
+          sed -i '' "s/t.type === 'page'/(t.type === 'page' || t.type === 'webview')/g" bundled-mcp/src/connection.js
           cd bundled-mcp && npm install
 
       - name: Install dependencies
