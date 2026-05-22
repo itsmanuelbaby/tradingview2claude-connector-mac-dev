@@ -685,51 +685,85 @@ async function step7_launcher(claudePath, tvPath, mcpDir) {
   writeLog(`[step7] launcher: ${launcherPath}`);
 }
 
-// ── Pipeline principale ──────────────────────────────────────────
-async function runInstall() {
-  const steps = [
-    { label: 'Verifica sistema',  fn: step0_sistema },
-    { label: 'Node.js',           fn: step1_nodejs  },
-    { label: 'Git',               fn: step2_git     },
-    { label: 'Claude Code',       fn: step3_claude  },
-    { label: 'TradingView MCP',   fn: step4_mcp     },
-    { label: 'Rileva TradingView',fn: step5_findtv  },
-    { label: 'Configura MCP',     fn: null          },
-    { label: 'Crea launcher',     fn: null          },
-  ];
+// ── Step: configura l'assistente (registra l'MCP bundled) ────────
+async function step_assistant(claudePath) {
+  const bundledMcp = getBundledMcpPath();
+  const serverJs = path.join(bundledMcp, 'src', 'server.js');
 
-  const total = steps.length;
-  let claudePath, mcpDir, tvPath;
-
-  function stepEvent(index, status) {
-    mainWin?.webContents.send('step', { index, status });
+  if (!fs.existsSync(serverJs)) {
+    // Modalità sviluppo (npm start): MCP non incluso — si usa la
+    // configurazione MCP già presente. Nessun errore.
+    sendLog('Assistente: uso la configurazione esistente', mainWin);
+    writeLog(`[assistant] MCP bundled assente (${serverJs}) — skip`);
+    return;
   }
+  if (!claudePath) throw new Error('Claude Code non disponibile');
+
+  const nodeBin = getBundledNodePath() || 'node';
+  const wrapperPath = path.join(HOME, '.tv2claude_mcp.sh');
+  fs.writeFileSync(wrapperPath,
+    `#!/bin/bash\nexec "${nodeBin}" "${serverJs}"\n`,
+    { encoding: 'utf8', mode: 0o755 });
+  writeLog(`[assistant] wrapper MCP: ${wrapperPath}`);
+
+  for (const old of ['tradingview', 'tradingview-mcp']) {
+    await run(claudePath, ['mcp', 'remove', '--scope', 'user', old],
+      { cwd: HOME, ignoreError: true });
+  }
+  await run(claudePath,
+    ['mcp', 'add', '--scope', 'user', 'tradingview-mcp', '/bin/bash', wrapperPath],
+    { cwd: HOME, ignoreError: false });
+
+  sendLog('Assistente di mercato configurato ✓', mainWin);
+}
+
+// ── Pipeline di setup ────────────────────────────────────────────
+async function runInstall() {
+  function stepEvent(i, s) { mainWin?.webContents.send('step', { index: i, status: s }); }
+  function progress(p)     { mainWin?.webContents.send('progress', p); }
 
   try {
-    for (let i = 0; i < total; i++) {
-      stepEvent(i, 'running');
-      try {
-        if (i === 0) await step0_sistema();
-        else if (i === 1) await step1_nodejs();
-        else if (i === 2) await step2_git();
-        else if (i === 3) claudePath = await step3_claude();
-        else if (i === 4) mcpDir = await step4_mcp();
-        else if (i === 5) tvPath = await step5_findtv();
-        else if (i === 6) await step6_mcp(claudePath, mcpDir);
-        else if (i === 7) await step7_launcher(claudePath, tvPath, mcpDir);
-        stepEvent(i, 'done');
-        mainWin?.webContents.send('progress', Math.round((i + 1) / total * 100));
-      } catch(e) {
-        writeLog(`[ERRORE step ${i}] ${e.stack || e.message}`);
-        stepEvent(i, 'error');
-        mainWin?.webContents.send('done', { ok: false, msg: e.message });
-        return;
-      }
-    }
+    stepEvent(0, 'running');
+    await step0_sistema();
+    stepEvent(0, 'done'); progress(33);
+
+    stepEvent(1, 'running');
+    const claudePath = await step3_claude();
+    stepEvent(1, 'done'); progress(66);
+
+    stepEvent(2, 'running');
+    await step_assistant(claudePath);
+    stepEvent(2, 'done'); progress(100);
+
     mainWin?.webContents.send('done', { ok: true });
-  } catch(e) {
-    writeLog(`[ERRORE fatale] ${e.stack || e.message}`);
+  } catch (e) {
+    writeLog(`[ERRORE setup] ${e.stack || e.message}`);
     mainWin?.webContents.send('done', { ok: false, msg: e.message });
+  }
+}
+
+// ── Verifica se il setup è già completo ──────────────────────────
+async function isSetupComplete() {
+  const claude = await findClaude();
+  if (!claude) return false;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
+    return !!(cfg && cfg.mcpServers && cfg.mcpServers['tradingview-mcp']);
+  } catch {
+    return false;
+  }
+}
+
+// ── Verifica licenza all'avvio (con tolleranza offline) ──────────
+// Ritorna: 'valid' | 'suspended' | 'offline'
+async function verifyLicenseStatus(key) {
+  try {
+    const res = await apiPost({ action: 'validate', license_key: key });
+    if (res && res.ok) return 'valid';
+    return 'suspended';
+  } catch (e) {
+    writeLog(`[license] verifica offline: ${e.message}`);
+    return 'offline';
   }
 }
 
@@ -737,16 +771,10 @@ async function runInstall() {
 ipcMain.on('start-install', () => { runInstall(); });
 ipcMain.on('open-url', (_, url) => { shell.openExternal(url); });
 
-// Apre il launcher .command sul Desktop
-ipcMain.on('open-launcher', () => {
-  let desktopDir = path.join(HOME, 'Desktop');
-  try { desktopDir = fs.realpathSync(desktopDir); } catch { desktopDir = HOME; }
-  const launcherPath = path.join(desktopDir, 'Avvia TradingView2Claude Dev.command');
-  if (fs.existsSync(launcherPath)) {
-    shell.openPath(launcherPath);
-  } else {
-    writeLog('[open-launcher] file non trovato: ' + launcherPath);
-  }
+// Setup completato → apre la dashboard e chiude la finestra di setup
+ipcMain.on('open-dashboard', () => {
+  createDashboardWindow();
+  if (mainWin && !mainWin.isDestroyed()) mainWin.close();
 });
 
 // Handler 'activate' — chiamato dalla UI con ipc.send('activate', {key})
@@ -761,7 +789,7 @@ ipcMain.on('activate', async (event, { key }) => {
     });
     writeLog(`[license] activate response: ${JSON.stringify(res)}`);
     if (res?.ok) {
-      saveLicense({ key });
+      saveLicense({ key, customer_name: res.customer_name || '' });
       event.sender.send('lic-result', { ok: true, customer_name: res.customer_name || 'Cliente' });
     } else {
       event.sender.send('lic-result', { ok: false, error: res?.error || 'Chiave non valida' });
@@ -782,11 +810,7 @@ ipcMain.on('check-license', async (event) => {
     return;
   }
   try {
-    const res = await apiPost({
-      action: 'check',
-      license_key: saved.key,
-      machine_id: getMachineId()
-    });
+    const res = await apiPost({ action: 'validate', license_key: saved.key });
     writeLog(`[license] check response: ${JSON.stringify(res)}`);
     if (res?.ok) {
       event.sender.send('screen', { name: 'install', data: { name: res.customer_name } });
@@ -795,9 +819,9 @@ ipcMain.on('check-license', async (event) => {
       event.sender.send('screen', { name: 'license' });
     }
   } catch(e) {
-    writeLog(`[license] check error: ${e.message}`);
-    // In caso di errore di rete mostra schermata licenza
-    event.sender.send('screen', { name: 'license' });
+    writeLog(`[license] check error (offline): ${e.message}`);
+    // Offline ma con licenza salvata → tolleranza: procedi al setup
+    event.sender.send('screen', { name: 'install', data: { name: saved.customer_name || '' } });
   }
 });
 
@@ -829,15 +853,35 @@ ipcMain.on('chat:send', (event, text) => {
 ipcMain.on('chat:reset', () => { claudeEngine.reset(); });
 
 // ── App lifecycle ────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initLog();
   writeLog('=== APP AVVIATA ===');
   writeLog(`Versione: ${app.getVersion()}`);
   writeLog(`Architettura: ${process.arch}`);
-  // FASE 1 PREVIEW — apre direttamente la dashboard per valutare il design.
-  // In Fase 4 il flusso diventerà: setup (createWindow) → dashboard.
-  createDashboardWindow();
-  app.on('activate', () => { if (!dashWin) createDashboardWindow(); });
+
+  // Flusso di avvio: dashboard solo se licenza valida e setup completo,
+  // altrimenti schermata di setup/licenza.
+  let goDashboard = false;
+  const lic = loadLicense();
+  if (lic && lic.key) {
+    const status = await verifyLicenseStatus(lic.key);
+    writeLog(`[avvio] stato licenza: ${status}`);
+    if (status !== 'suspended' && await isSetupComplete()) {
+      goDashboard = true;
+    }
+  }
+
+  if (goDashboard) {
+    writeLog('[avvio] → dashboard');
+    createDashboardWindow();
+  } else {
+    writeLog('[avvio] → setup/licenza');
+    createWindow();
+  }
+
+  app.on('activate', () => {
+    if (!mainWin && !dashWin) createDashboardWindow();
+  });
 });
 
 app.on('window-all-closed', () => {

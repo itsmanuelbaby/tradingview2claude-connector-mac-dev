@@ -377,17 +377,12 @@ body {
 
   <!-- SIDEBAR -->
   <div id="sidebar">
-    <div class="sb-section">Installazione</div>
+    <div class="sb-section">Configurazione</div>
     <div id="sb-welcome"></div>
 
     <div class="step-row" id="s0"><div class="step-num">1</div><div class="step-lbl">Verifica sistema</div></div>
-    <div class="step-row" id="s1"><div class="step-num">2</div><div class="step-lbl">Node.js</div></div>
-    <div class="step-row" id="s2"><div class="step-num">3</div><div class="step-lbl">Git</div></div>
-    <div class="step-row" id="s3"><div class="step-num">4</div><div class="step-lbl">Claude Code</div></div>
-    <div class="step-row" id="s4"><div class="step-num">5</div><div class="step-lbl">TradingView MCP</div></div>
-    <div class="step-row" id="s5"><div class="step-num">6</div><div class="step-lbl">Rileva TradingView</div></div>
-    <div class="step-row" id="s6"><div class="step-num">7</div><div class="step-lbl">Configura MCP</div></div>
-    <div class="step-row" id="s7"><div class="step-num">8</div><div class="step-lbl">Crea launcher</div></div>
+    <div class="step-row" id="s1"><div class="step-num">2</div><div class="step-lbl">Claude Code</div></div>
+    <div class="step-row" id="s2"><div class="step-num">3</div><div class="step-lbl">Assistente di mercato</div></div>
 
     <div id="sb-version">v1.0.0</div>
   </div>
@@ -402,15 +397,15 @@ body {
     <div id="log-wrap">
       <div id="log-hdr">● output installazione</div>
       <div id="log-body">
-        <div class="info">› Pronto. Clicca "Inizia installazione" per cominciare.</div>
+        <div class="info">› Configurazione in corso…</div>
       </div>
     </div>
 
     <div id="progress-wrap"><div id="progress-bar"></div></div>
 
     <div class="banner" id="b-ok">
-      <h3>✓ Installazione completata!</h3>
-      <p>Il launcher è stato creato sul Desktop.<br>Al primo avvio verrà richiesto il login su Claude.ai (una sola volta).</p>
+      <h3>✓ Tutto pronto!</h3>
+      <p>Apertura della dashboard…</p>
     </div>
     <div class="banner" id="b-err">
       <h3>✗ Installazione interrotta</h3>
@@ -418,10 +413,10 @@ body {
     </div>
 
     <div id="footer">
-      <div class="f-status" id="f-status">In attesa di avvio...</div>
+      <div class="f-status" id="f-status">Configurazione in corso...</div>
       <button class="btn btn-ghost" onclick="require('electron').ipcRenderer.send('close-app')">Esci</button>
-      <button class="btn btn-green" id="btn-launch" onclick="require('electron').ipcRenderer.send('open-launcher')">▶ Avvia ora</button>
-      <button class="btn btn-gold"  id="btn-start"  onclick="doInstall()">Inizia installazione</button>
+      <button class="btn btn-green" id="btn-launch" style="display:none" onclick="require('electron').ipcRenderer.send('open-dashboard')">▶ Apri la Dashboard</button>
+      <button class="btn btn-gold"  id="btn-start"  style="display:none" onclick="doInstall()">Riprova</button>
     </div>
   </div>
 
@@ -514,6 +509,7 @@ function showInstall(name) {
     w.textContent = '✓ ' + name;
     w.style.display = 'block';
   }
+  doInstall(); // avvio automatico della configurazione
 }
 
 // ── INSTALLER ────────────────────────────────────────────────
@@ -524,8 +520,11 @@ const btnStart  = document.getElementById('btn-start');
 const btnLaunch = document.getElementById('btn-launch');
 
 function doInstall() {
-  btnStart.disabled = true;
-  fStatus.textContent = 'Installazione in corso...';
+  btnStart.style.display = 'none';
+  document.getElementById('b-ok').style.display = 'none';
+  document.getElementById('b-err').style.display = 'none';
+  fStatus.textContent = 'Configurazione in corso...';
+  fStatus.className = 'f-status';
   logBody.innerHTML = '';
   ipc.send('start-install');
 }
@@ -571,16 +570,16 @@ ipc.on('done', (_, { ok, msg }) => {
   if (ok) {
     document.getElementById('b-ok').style.display = 'block';
     btnLaunch.style.display = 'inline-block';
-    fStatus.textContent = 'Installazione completata!';
+    fStatus.textContent = 'Tutto pronto!';
     fStatus.className = 'f-status ok';
+    setTimeout(() => ipc.send('open-dashboard'), 1600);
   } else {
     document.getElementById('b-err').style.display = 'block';
-    // Mostra messaggio multiriga
     document.getElementById('b-err-msg').textContent = msg;
     fStatus.textContent = 'Errore — leggi il log sopra';
     fStatus.className = 'f-status err';
+    btnStart.style.display = 'inline-block';
     btnStart.disabled = false;
-    btnStart.textContent = 'Riprova';
   }
 });
 
