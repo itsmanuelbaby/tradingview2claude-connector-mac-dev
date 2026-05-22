@@ -59,9 +59,16 @@ function listNotes() {
 }
 
 // ── Possibili ticker nel testo (3-8 lettere maiuscole) ───────────
+// Esclude il gergo di trading per non scambiarlo per un simbolo.
+const JARGON = new Set([
+  'STOP', 'TARGET', 'ENTRY', 'SHORT', 'LONG', 'BUY', 'SELL', 'HOLD',
+  'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'RSI', 'MACD', 'EMA', 'SMA',
+  'ATR', 'ADX', 'VWAP', 'OK', 'TP', 'SL',
+]);
 function tickersIn(text) {
   const m = String(text || '').match(/\b[A-Z]{3,8}\b/g);
-  return m ? Array.from(new Set(m)) : [];
+  if (!m) return [];
+  return Array.from(new Set(m)).filter(t => !JARGON.has(t));
 }
 
 // ── Costruisce il contesto da reiniettare prima di una domanda ───
@@ -110,7 +117,9 @@ function saveNote(userMessage, answer) {
   const p = n => String(n).padStart(2, '0');
   const stamp = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
               + ` ${p(now.getHours())}${p(now.getMinutes())}`;
-  const tickers = tickersIn(userMessage);
+  // Il simbolo viene cercato nella domanda; se assente, nella risposta
+  let tickers = tickersIn(userMessage);
+  if (!tickers.length) tickers = tickersIn(answer);
   const tag = tickers.length ? tickers[0] : 'analisi';
 
   const base = `${stamp} ${tag}`;
