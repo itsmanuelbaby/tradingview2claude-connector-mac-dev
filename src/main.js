@@ -412,8 +412,10 @@ ipcMain.on('check-license', async (event) => {
     if (res?.ok) {
       event.sender.send('screen', { name: 'install', data: { name: res.customer_name } });
     } else {
-      clearLicense();
-      event.sender.send('screen', { name: 'license' });
+      // Licenza non attiva (es. sospesa): NON cancellare la chiave salvata —
+      // se viene riattivata, l'utente non deve reinserirla da capo.
+      event.sender.send('screen', { name: 'license', notice:
+        'La licenza non risulta attiva. Se è stata appena riattivata, chiudi e riapri l\'app.' });
     }
   } catch(e) {
     writeLog(`[license] check error (offline): ${e.message}`);

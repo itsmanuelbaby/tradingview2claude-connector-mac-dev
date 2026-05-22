@@ -490,14 +490,15 @@ ipc.on('lic-result', (_, r) => {
 });
 
 // ── NAVIGAZIONE SCHERMATE ────────────────────────────────────
-ipc.on('screen', (_, { name, data }) => {
-  if (name === 'license') showLicense();
+ipc.on('screen', (_, { name, data, notice }) => {
+  if (name === 'license') showLicense(notice);
   else showInstall(data && data.name);
 });
 
-function showLicense() {
+function showLicense(notice) {
   document.getElementById('scr-lic').style.display = 'flex';
   document.getElementById('scr-ins').style.display = 'none';
+  if (notice) setLicMsg(notice, 'err');
   document.getElementById('lic-inp').focus();
 }
 
