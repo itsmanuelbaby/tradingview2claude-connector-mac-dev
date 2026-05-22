@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const HOME    = os.homedir();
 const IS_MAC  = process.platform === 'darwin';
 const IS_WIN  = process.platform === 'win32';
-const LOG_DIR = path.join(HOME, 'Library', 'Logs', 'TradingView2Claude');
+const LOG_DIR = path.join(HOME, 'Library', 'Logs', 'TradingView2Claude Dev');
 const LOG_FILE = path.join(LOG_DIR, 'installer.log');
 
 // ── Logger ───────────────────────────────────────────────────────
@@ -547,7 +547,7 @@ async function step7_launcher(claudePath, tvPath, mcpDir) {
     'clear',
     'echo ""',
     'echo "  +==============================================+"',
-   `echo "  |    TradingView2Claude Connector  v${app.getVersion()}     |"`,
+   `echo "  |    TradingView2Claude Connector DEV v${app.getVersion()}  |"`,
     'echo "  +==============================================+"',
     'echo ""',
     '',
@@ -651,7 +651,7 @@ async function step7_launcher(claudePath, tvPath, mcpDir) {
     '"$CLAUDE"',
   ].join('\n');
 
-  const launcherPath = path.join(desktop, 'Avvia TradingView2Claude.command');
+  const launcherPath = path.join(desktop, 'Avvia TradingView2Claude Dev.command');
   fs.writeFileSync(launcherPath, script, { encoding: 'utf8' });
   fs.chmodSync(launcherPath, 0o755);
 
@@ -715,7 +715,7 @@ ipcMain.on('open-url', (_, url) => { shell.openExternal(url); });
 ipcMain.on('open-launcher', () => {
   let desktopDir = path.join(HOME, 'Desktop');
   try { desktopDir = fs.realpathSync(desktopDir); } catch { desktopDir = HOME; }
-  const launcherPath = path.join(desktopDir, 'Avvia TradingView2Claude.command');
+  const launcherPath = path.join(desktopDir, 'Avvia TradingView2Claude Dev.command');
   if (fs.existsSync(launcherPath)) {
     shell.openPath(launcherPath);
   } else {

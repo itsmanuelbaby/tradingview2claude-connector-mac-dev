@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
-<title>TradingView2Claude Connector</title>
+<title>TradingView2Claude Connector Dev</title>
 <style>
 /* ── RESET & VARS ─────────────────────────────────────────── */
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -337,7 +337,7 @@ body {
 <!-- TITLEBAR -->
 <div id="titlebar">
   <div style="display:flex;align-items:center;gap:0">
-    <span id="titlebar-logo">TradingView2Claude</span>
+    <span id="titlebar-logo">TradingView2Claude <b style="color:#e0a000">DEV</b></span>
     <span id="titlebar-version"></span>
   </div>
   <button id="btn-close" title="Chiudi" onclick="require('electron').ipcRenderer.send('close-app')"></button>
@@ -395,7 +395,7 @@ body {
   <!-- MAIN -->
   <div id="main-panel">
     <div class="ins-hero">
-      <h1>TradingView2Claude Connector</h1>
+      <h1>TradingView2Claude Connector Dev</h1>
       <p>Setup automatico — segui il progresso a sinistra</p>
     </div>
 

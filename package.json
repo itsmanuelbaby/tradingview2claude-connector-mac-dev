@@ -9,9 +9,9 @@
     "dist-mac": "electron-builder --mac"
   },
   "build": {
-    "appId": "com.tv2claude.connector",
-    "productName": "TradingView2Claude Connector",
-    "copyright": "TradingView2Claude Connector",
+    "appId": "com.tv2claude.connector.dev",
+    "productName": "TradingView2Claude Connector Dev",
+    "copyright": "TradingView2Claude Connector Dev",
     "directories": {
       "output": "dist"
     },
@@ -32,10 +32,10 @@
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.utilities",
-      "artifactName": "TradingView2Claude-${arch}.dmg"
+      "artifactName": "TradingView2Claude-Dev-${arch}.dmg"
     },
     "dmg": {
-      "title": "TradingView2Claude Connector",
+      "title": "TradingView2Claude Connector Dev",
       "writeUpdateInfo": false
     },
     "extraResources": [

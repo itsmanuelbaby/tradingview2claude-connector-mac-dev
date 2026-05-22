@@ -1,12 +1,12 @@
 #!/bin/bash
 
-REPO="itsmanuelbaby/tradingview2claude-connector-mac"
-APP_NAME="TradingView2Claude Connector"
+REPO="itsmanuelbaby/tradingview2claude-connector-mac-dev"
+APP_NAME="TradingView2Claude Connector Dev"
 
 clear
 echo ""
 echo "  +==============================================+"
-echo "  |    TradingView2Claude Connector             |"
+echo "  |    TradingView2Claude Connector  [DEV]      |"
 echo "  |    Installazione automatica                 |"
 echo "  +==============================================+"
 echo ""
@@ -20,9 +20,9 @@ fi
 # Architettura
 ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
-  DMG_NAME="TradingView2Claude-arm64.dmg"
+  DMG_NAME="TradingView2Claude-Dev-arm64.dmg"
 else
-  DMG_NAME="TradingView2Claude-x64.dmg"
+  DMG_NAME="TradingView2Claude-Dev-x64.dmg"
 fi
 echo "  Architettura rilevata: $ARCH"
 echo ""
@@ -75,7 +75,7 @@ rm -f "$TMP_DMG"
 
 echo "  [4/4] Pulizia completata."
 echo ""
-echo "  ✓ TradingView2Claude Connector installato!"
+echo "  ✓ TradingView2Claude Connector Dev installato!"
 echo ""
 echo "  Avvio in corso..."
 sleep 1
