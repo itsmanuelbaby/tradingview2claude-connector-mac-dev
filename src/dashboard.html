@@ -377,6 +377,13 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
   cursor: pointer; white-space: nowrap;
 }
 #acc-banner button:hover { background: var(--gold2); }
+#acc-banner #acc-close {
+  background: transparent;
+  color: var(--gold2);
+  font-size: 13px;
+  padding: 4px 6px;
+}
+#acc-banner #acc-close:hover { background: rgba(212,160,23,.20); }
 </style>
 </head>
 <body>
@@ -397,8 +404,9 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
   <!-- ─── CHAT ─── -->
   <div id="pane-chat">
     <div id="acc-banner">
-      <span class="acc-txt">Per affiancare TradingView serve il permesso "Accessibilità" di macOS.</span>
+      <span class="acc-txt">Per affiancare TradingView attiva il permesso «Accessibilità» — l'app si aggancia da sola appena concesso.</span>
       <button id="acc-btn">Apri Impostazioni</button>
+      <button id="acc-close" title="Ignora">✕</button>
     </div>
     <div class="chat-head">
       <span class="hex">⬡</span>
@@ -674,6 +682,14 @@ body.docked #pane-chat { flex: 1 1 auto !important; width: auto !important; }
   });
   if (accBtn) accBtn.addEventListener('click', function () {
     ipc.send('dash:open-accessibility');
+  });
+  const accClose = document.getElementById('acc-close');
+  if (accClose) accClose.addEventListener('click', function () {
+    if (accBanner) accBanner.classList.remove('show');
+  });
+  // permesso concesso → TradingView agganciato automaticamente
+  ipc.on('layout:accessibility-ok', function () {
+    if (accBanner) accBanner.classList.remove('show');
   });
 
   // ── DIVISORE trascinabile ──

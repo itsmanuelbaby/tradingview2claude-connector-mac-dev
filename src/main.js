@@ -136,11 +136,39 @@ function createDashboardWindow() {
 
 // ── Layout dashboard + TradingView affiancato (Fase 3) ───────────
 let curChatWidth = 0;
+let accRetryTimer = null;
 
 function sendDash(channel, payload) {
   if (dashWin && !dashWin.isDestroyed()) {
     dashWin.webContents.send(channel, payload);
   }
+}
+
+// Area destra dello schermo riservata a TradingView
+function tvTargetBounds() {
+  const wa = windowManager.workArea();
+  return {
+    x: wa.x + curChatWidth, y: wa.y,
+    width: wa.width - curChatWidth, height: wa.height,
+  };
+}
+
+// Dopo che l'utente concede il permesso Accessibilità, aggancia da solo
+function startAccessibilityRetry() {
+  if (accRetryTimer) return;
+  let attempts = 0;
+  accRetryTimer = setInterval(async () => {
+    attempts++;
+    if (!dashWin || dashWin.isDestroyed() || attempts > 90) {
+      clearInterval(accRetryTimer); accRetryTimer = null; return;
+    }
+    const pos = await windowManager.positionTradingView(tvTargetBounds());
+    if (pos.ok) {
+      clearInterval(accRetryTimer); accRetryTimer = null;
+      writeLog('[layout] permesso concesso — TradingView agganciato');
+      sendDash('layout:accessibility-ok');
+    }
+  }, 5000);
 }
 
 async function setupDashboardLayout() {
@@ -169,16 +197,12 @@ async function setupDashboardLayout() {
       dashWin.setMovable(false);
     }
 
-    const pos = await windowManager.positionTradingView({
-      x: wa.x + chatWidth, y: wa.y,
-      width: wa.width - chatWidth, height: wa.height,
-    });
+    const pos = await windowManager.positionTradingView(tvTargetBounds());
     writeLog(`[layout] posizionamento TradingView: ${JSON.stringify(pos)}`);
 
-    sendDash('layout:mode', {
-      docked: true,
-      accessibilityNeeded: !pos.ok && pos.error === 'accessibility',
-    });
+    const accNeeded = !pos.ok && pos.error === 'accessibility';
+    sendDash('layout:mode', { docked: true, accessibilityNeeded: accNeeded });
+    if (accNeeded) startAccessibilityRetry();
     if (dashWin && !dashWin.isDestroyed()) dashWin.focus();
   } catch (e) {
     writeLog(`[layout] errore: ${e.message}`);
