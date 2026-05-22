@@ -11,6 +11,7 @@ const { spawn, exec } = require('child_process');
 const fs     = require('fs');
 const os     = require('os');
 const crypto = require('crypto');
+const claudeEngine = require('./claude-engine');
 
 // ── Costanti ─────────────────────────────────────────────────────
 const HOME    = os.homedir();
@@ -802,6 +803,23 @@ ipcMain.on('get-version', (event) => {
 ipcMain.on('close-app', () => {
   app.quit();
 });
+
+// ── IPC: Chat dashboard ──────────────────────────────────────────
+// La UI invia 'chat:send' con il testo; il motore risponde in streaming.
+ipcMain.on('chat:send', (event, text) => {
+  const send = (channel, payload) => {
+    if (!event.sender.isDestroyed()) event.sender.send(channel, payload);
+  };
+  claudeEngine.ask(String(text || ''), {
+    onText:  (t)     => send('claude:text', t),
+    onTool:  (label) => send('claude:tool', label),
+    onError: (msg)   => send('claude:error', msg),
+    onDone:  ()      => send('claude:done'),
+  });
+});
+
+// Azzera la conversazione corrente (per una "nuova chat")
+ipcMain.on('chat:reset', () => { claudeEngine.reset(); });
 
 // ── App lifecycle ────────────────────────────────────────────────
 app.whenReady().then(() => {

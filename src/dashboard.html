@@ -185,6 +185,21 @@ body {
   animation: blink .9s steps(2) infinite;
 }
 @keyframes blink { 0%,50%{opacity:1;} 50.1%,100%{opacity:0;} }
+.bubble.err {
+  border-color: rgba(244,67,54,.40) !important;
+  background: rgba(244,67,54,.08) !important;
+  color: #F5B5B0 !important;
+}
+.bubble code {
+  font-family: 'SF Mono','Consolas',monospace;
+  font-size: 12px;
+  background: #0A0A0A;
+  border: 1px solid var(--bord2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.bubble .li { display: block; padding-left: 15px; position: relative; margin: 3px 0; }
+.bubble .li::before { content: "•"; color: var(--gold); position: absolute; left: 2px; }
 
 /* chip "sta usando uno strumento" */
 .tool-chip {
@@ -482,32 +497,90 @@ body {
     return t;
   }
 
-  // ── streaming finto (Fase 1) ──
-  function streamInto(bubble, text, done) {
-    const words = text.split(' ');
-    let i = 0;
-    const cur = document.createElement('span');
-    cur.className = 'cursor';
-    bubble.appendChild(cur);
-    const timer = setInterval(function () {
-      if (i >= words.length) {
-        clearInterval(timer);
-        cur.remove();
-        if (done) done();
-        return;
-      }
-      cur.insertAdjacentText('beforebegin', (i ? ' ' : '') + words[i]);
-      i++;
-      scrollDown();
-    }, 38);
+  // ── motore Claude (IPC) ──
+  const ipc = require('electron').ipcRenderer;
+
+  // stato del turno corrente
+  let curBubble = null;   // bolla risposta in costruzione
+  let toolChip  = null;   // chip "sto usando uno strumento"
+  let streamBuf = '';     // testo in coda da animare
+  let draining  = false;  // animazione in corso
+  let turnDone  = false;  // il motore ha finito
+
+  function ensureBubble() {
+    if (!curBubble) curBubble = addBot();
+    return curBubble;
+  }
+  function clearTool() {
+    if (toolChip) { toolChip.remove(); toolChip = null; }
   }
 
-  // ── risposta finta a tema (solo anteprima) ──
-  function cannedReply(q) {
-    return 'Questa è un\'anteprima del design (Fase 1): il motore di analisi non è ancora collegato.\n\n' +
-           'Nella versione completa, a questa domanda risponderei leggendo il grafico reale di TradingView qui a destra — prezzo, indicatori, volumi — e ti darei un\'analisi operativa con livelli, trend e setup.\n\n' +
-           'Per ora puoi provare il layout: scrivi messaggi, guarda lo streaming delle risposte e trascina la striscia centrale per regolare lo spazio tra chat e grafico.';
+  // animazione fluida del testo in arrivo
+  function enqueue(text) {
+    streamBuf += text;
+    if (!draining) { draining = true; drain(); }
   }
+  function drain() {
+    if (streamBuf.length === 0) {
+      draining = false;
+      if (turnDone) finishTurn();
+      return;
+    }
+    const b = ensureBubble();
+    b.textContent += streamBuf.slice(0, 3);
+    streamBuf = streamBuf.slice(3);
+    scrollDown();
+    setTimeout(drain, 12);
+  }
+
+  function finishTurn() {
+    if (draining || streamBuf.length > 0) return;
+    clearTool();
+    if (curBubble) applyFormatting(curBubble);
+    curBubble = null;
+    turnDone = false;
+    busy = false;
+    btnSend.disabled = false;
+    input.focus();
+  }
+
+  // formattazione leggera a fine risposta (grassetto, elenchi, codice)
+  function applyFormatting(bubble) {
+    let t = bubble.textContent;
+    t = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    t = t.replace(/^\s*[\-\*•]\s+(.*)$/gm, '<span class="li">$1</span>');
+    bubble.innerHTML = t;
+  }
+
+  // eventi dal motore
+  ipc.on('claude:text', function (e, chunk) {
+    clearTool();
+    enqueue(chunk);
+  });
+  ipc.on('claude:tool', function (e, label) {
+    if (curBubble) return; // sta già scrivendo la risposta
+    if (!toolChip) toolChip = showTool(label);
+    else toolChip.querySelector('span:last-child').textContent = label;
+  });
+  ipc.on('claude:error', function (e, msg) {
+    clearTool();
+    streamBuf = '';
+    draining = false;
+    const b = ensureBubble();
+    b.classList.add('err');
+    b.textContent = msg || 'Si è verificato un errore.';
+    curBubble = null;
+    turnDone = false;
+    busy = false;
+    btnSend.disabled = false;
+    input.focus();
+  });
+  ipc.on('claude:done', function () {
+    turnDone = true;
+    if (!draining) finishTurn();
+  });
 
   function send() {
     const text = input.value.trim();
@@ -520,16 +593,14 @@ body {
     input.value = '';
     autosize();
 
-    const tool = showTool('Sto analizzando il grafico…');
-    setTimeout(function () {
-      tool.remove();
-      const bubble = addBot();
-      streamInto(bubble, cannedReply(text), function () {
-        busy = false;
-        btnSend.disabled = false;
-        input.focus();
-      });
-    }, 1100);
+    // reset stato turno
+    curBubble = null;
+    streamBuf = '';
+    draining = false;
+    turnDone = false;
+    toolChip = showTool('Sto analizzando il grafico…');
+
+    ipc.send('chat:send', text);
   }
 
   // ── DIVISORE trascinabile ──
