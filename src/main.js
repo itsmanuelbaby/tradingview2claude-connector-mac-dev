@@ -114,6 +114,24 @@ function createWindow() {
   mainWin.on('closed', () => { mainWin = null; });
 }
 
+// ── Finestra Dashboard (nuovo prodotto) ──────────────────────────
+let dashWin = null;
+
+function createDashboardWindow() {
+  dashWin = new BrowserWindow({
+    width: 1120, height: 760,
+    minWidth: 860, minHeight: 560,
+    frame: false,
+    backgroundColor: '#0D0D0D',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+  dashWin.loadFile(path.join(__dirname, 'dashboard.html'));
+  dashWin.on('closed', () => { dashWin = null; });
+}
+
 // ── Trova Claude (Mac) ───────────────────────────────────────────
 async function findClaude() {
   // 1. Installazione nativa ufficiale (~/.local/bin)
@@ -791,8 +809,10 @@ app.whenReady().then(() => {
   writeLog('=== APP AVVIATA ===');
   writeLog(`Versione: ${app.getVersion()}`);
   writeLog(`Architettura: ${process.arch}`);
-  createWindow();
-  app.on('activate', () => { if (!mainWin) createWindow(); });
+  // FASE 1 PREVIEW — apre direttamente la dashboard per valutare il design.
+  // In Fase 4 il flusso diventerà: setup (createWindow) → dashboard.
+  createDashboardWindow();
+  app.on('activate', () => { if (!dashWin) createDashboardWindow(); });
 });
 
 app.on('window-all-closed', () => {
