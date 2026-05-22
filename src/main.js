@@ -473,6 +473,9 @@ ipcMain.on('chat:send', (event, text) => {
 // Azzera la conversazione corrente (per una "nuova chat")
 ipcMain.on('chat:reset', () => { claudeEngine.reset(); });
 
+// Cambia il modello AI (opus / sonnet / haiku)
+ipcMain.on('chat:set-model', (_e, model) => { claudeEngine.setModel(model); });
+
 // ── App lifecycle ────────────────────────────────────────────────
 app.whenReady().then(async () => {
   initLog();

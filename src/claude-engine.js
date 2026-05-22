@@ -24,6 +24,15 @@ const TURN_TIMEOUT_MS = 180000;
 // ── Stato conversazione (una sessione per avvio app) ─────────────
 let sessionId = null;
 
+// Modello AI in uso (opus = massima qualità, default)
+let currentModel = 'opus';
+function setModel(m) {
+  if (m === 'opus' || m === 'sonnet' || m === 'haiku') {
+    currentModel = m;
+    log(`Modello impostato: ${m}`);
+  }
+}
+
 // ── Log diagnostico ──────────────────────────────────────────────
 function log(msg) {
   try {
@@ -168,6 +177,7 @@ function ask(userMessage, handlers) {
     '-p', prompt,
     '--output-format', 'stream-json',
     '--verbose',
+    '--model', currentModel,
     '--allowedTools', 'mcp__tradingview-mcp__*',
   ];
   if (sessionId) args.push('--resume', sessionId);
@@ -271,4 +281,4 @@ function reset() {
   log('Sessione azzerata');
 }
 
-module.exports = { ask, reset, findClaudeBinary };
+module.exports = { ask, reset, setModel, findClaudeBinary };

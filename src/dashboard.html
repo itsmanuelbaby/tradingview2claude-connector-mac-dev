@@ -100,6 +100,20 @@ body {
 .chat-head .title { font-size: 12.5px; font-weight: 600; letter-spacing: .3px; }
 .chat-head .sub { font-size: 10px; color: var(--gray); margin-left: auto; display:flex; align-items:center; gap:5px; }
 .chat-head .sub .d { width:5px; height:5px; border-radius:50%; background:var(--green); }
+#model-sel {
+  margin-left: auto;
+  background: #090909;
+  color: var(--lg);
+  border: 1px solid var(--bord2);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 4px 7px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s, color .15s;
+}
+#model-sel:hover { border-color: var(--gold); color: var(--white); }
 
 /* ─── AREA MESSAGGI ─── */
 #messages {
@@ -378,7 +392,11 @@ body {
     <div class="chat-head">
       <span class="hex">⬡</span>
       <span class="title">Assistente di mercato</span>
-      <span class="sub"><span class="d"></span> Online</span>
+      <select id="model-sel" title="Modello di analisi">
+        <option value="opus">Opus · qualità max</option>
+        <option value="sonnet">Sonnet · equilibrato</option>
+        <option value="haiku">Haiku · veloce</option>
+      </select>
     </div>
 
     <div id="messages">
@@ -434,6 +452,18 @@ body {
   document.getElementById('btn-close').addEventListener('click', function () {
     ipc.send('close-app');
   });
+
+  // ── selettore del modello AI (default: Opus) ──
+  const modelSel = document.getElementById('model-sel');
+  if (modelSel) {
+    const savedModel = localStorage.getItem('tv2c-model') || 'opus';
+    modelSel.value = savedModel;
+    ipc.send('chat:set-model', savedModel);
+    modelSel.addEventListener('change', function () {
+      localStorage.setItem('tv2c-model', modelSel.value);
+      ipc.send('chat:set-model', modelSel.value);
+    });
+  }
 
   const messages = document.getElementById('messages');
   const welcome  = document.getElementById('welcome');
