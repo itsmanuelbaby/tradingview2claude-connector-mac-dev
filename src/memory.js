@@ -86,6 +86,24 @@ function tickersIn(text) {
   return Array.from(new Set(m)).filter(t => !JARGON.has(t));
 }
 
+// ── Parole significative per la ricerca leggera nelle note ───────
+const STOPWORDS = new Set([
+  'il','lo','la','i','gli','le','un','uno','una','di','da','in','con','su','per','tra','fra',
+  'e','o','ma','che','non','si','mi','ti','del','dello','della','dei','degli','delle',
+  'come','quando','dove','perché','cosa','chi','tutto','tutti','più','meno','già','ora','adesso',
+  'anche','solo','molto','poco','questo','questa','questi','queste','quel','quella','quello',
+  'analizza','dimmi','fammi','vedi','vedo','sono','hai','abbiamo','potresti','vorrei','potete',
+  'the','and','for','with','this','that','what','when','where','from','have','will','your',
+]);
+function significantWords(text) {
+  return Array.from(new Set(
+    String(text || '').toLowerCase()
+      .replace(/[^\wàèéìòùa-z0-9 ]/gi, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 4 && !STOPWORDS.has(w))
+  ));
+}
+
 // ── Costruisce il contesto da reiniettare prima di una domanda ───
 function buildContext(userMessage) {
   ensureVault();
@@ -106,28 +124,32 @@ function buildContext(userMessage) {
     ctx += '\n';
   }
 
+  // ── Recupero note: punteggio per ticker + parole-chiave + recenza ──
   const notes = listNotes();
+  const candidates = notes.slice(0, 50); // valuta le ~50 più recenti
   const tickers = tickersIn(userMessage);
-  const picked = [];
-  // prima le note che citano lo stesso ticker della domanda
-  for (const f of notes) {
-    if (picked.length >= MAX_NOTES_IN_CONTEXT) break;
-    if (tickers.length && tickers.some(t => f.includes(t))) picked.push(f);
-  }
-  // poi le più recenti
-  for (const f of notes) {
-    if (picked.length >= MAX_NOTES_IN_CONTEXT) break;
-    if (picked.indexOf(f) === -1) picked.push(f);
-  }
+  const keywords = significantWords(userMessage);
+
+  const scored = candidates.map((f, idx) => {
+    let content = '';
+    try { content = fs.readFileSync(path.join(NOTES_DIR, f), 'utf8'); } catch (_) {}
+    const lc = content.toLowerCase();
+    let s = 0;
+    if (tickers.some(t => f.includes(t))) s += 3;          // ticker nel nome
+    for (const t of tickers) if (content.includes(t)) s += 2;  // ticker nel testo
+    for (const k of keywords) if (lc.includes(k)) s += 1;      // parola-chiave
+    if (idx < 5) s += 1;                                       // bonus recenza
+    return { f, content, score: s };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const picked = scored.filter(x => x.score > 0).slice(0, MAX_NOTES_IN_CONTEXT);
 
   if (picked.length) {
     ctx += '## Le tue analisi passate (per dare continuità)\n';
-    for (const f of picked) {
-      try {
-        let content = fs.readFileSync(path.join(NOTES_DIR, f), 'utf8');
-        if (content.length > MAX_NOTE_CHARS) content = content.slice(0, MAX_NOTE_CHARS) + '…';
-        ctx += '\n— ' + f.replace(/\.md$/, '') + ' —\n' + content + '\n';
-      } catch (_) {}
+    for (const item of picked) {
+      let content = item.content;
+      if (content.length > MAX_NOTE_CHARS) content = content.slice(0, MAX_NOTE_CHARS) + '…';
+      ctx += '\n— ' + item.f.replace(/\.md$/, '') + ' —\n' + content + '\n';
     }
   }
 
