@@ -59,6 +59,22 @@ body {
   box-shadow: 0 0 6px var(--green);
 }
 .tb-status { font-size: 10px; color: var(--gray); letter-spacing: .5px; }
+.tb-right { display: flex; align-items: center; gap: 12px; }
+#btn-diag {
+  -webkit-app-region: no-drag;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--bord2);
+  color: var(--gray);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .15s, border-color .15s;
+}
+#btn-diag:hover { color: var(--gold); border-color: var(--gold); }
 #btn-close {
   -webkit-app-region: no-drag;
   width: 13px; height: 13px;
@@ -381,7 +397,10 @@ body {
     <span class="tb-dot"></span>
     <span class="tb-status">Connesso</span>
   </div>
-  <button id="btn-close" title="Chiudi"></button>
+  <div class="tb-right">
+    <button id="btn-diag" title="Genera report diagnostico (per supporto)">?</button>
+    <button id="btn-close" title="Chiudi"></button>
+  </div>
 </div>
 
 <!-- ══════ SPLIT ══════ -->
@@ -451,6 +470,17 @@ body {
   // ── chiusura finestra ──
   document.getElementById('btn-close').addEventListener('click', function () {
     ipc.send('close-app');
+  });
+
+  // ── report diagnostico ──
+  const btnDiag = document.getElementById('btn-diag');
+  if (btnDiag) btnDiag.addEventListener('click', function () {
+    btnDiag.textContent = '…';
+    ipc.send('diag:generate');
+  });
+  ipc.on('diag:done', function (e, r) {
+    btnDiag.textContent = r && r.ok ? '✓' : '!';
+    setTimeout(() => { btnDiag.textContent = '?'; }, 2200);
   });
 
   // ── selettore del modello AI (default: Opus) ──

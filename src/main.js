@@ -374,6 +374,95 @@ ipcMain.on('open-dashboard', () => {
   if (mainWin && !mainWin.isDestroyed()) mainWin.close();
 });
 
+// ── Report diagnostico ───────────────────────────────────────────
+async function generateDiagnosticReport() {
+  const L = [];
+  L.push('═══ TradingView2Claude Connector — Report Diagnostico ═══');
+  L.push('Generato: ' + new Date().toISOString().replace('T', ' ').slice(0, 19));
+  L.push('App versione: ' + app.getVersion());
+  L.push(`Sistema: macOS ${os.release()} ${process.arch}`);
+  L.push('');
+  L.push('── Claude Code ──');
+  const claudePath = await findClaude();
+  L.push('Binario: ' + (claudePath || 'NON TROVATO'));
+  L.push('');
+  L.push('── MCP ──');
+  let mcpReg = false;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
+    mcpReg = !!(cfg && cfg.mcpServers && cfg.mcpServers['tradingview-mcp']);
+  } catch (_) {}
+  L.push('tradingview-mcp registrato: ' + (mcpReg ? 'sì' : 'no'));
+  L.push('Wrapper ~/.tv2claude_mcp.sh: '
+       + (fs.existsSync(path.join(HOME, '.tv2claude_mcp.sh')) ? 'sì' : 'no'));
+  L.push('');
+  L.push('── TradingView (porta debug 9222) ──');
+  const tvUp = await new Promise(r => {
+    const http = require('http');
+    const req = http.get({host:'127.0.0.1', port:9222, path:'/json/version', timeout:1500},
+      res => { res.resume(); r(true); });
+    req.on('error', () => r(false));
+    req.on('timeout', () => { req.destroy(); r(false); });
+  });
+  L.push('Raggiungibile: ' + (tvUp ? 'sì' : 'no'));
+  L.push('');
+  L.push('── Licenza ──');
+  L.push('File presente: ' + (fs.existsSync(LICENSE_FILE) ? 'sì' : 'no')
+       + '  (chiave non inclusa per privacy)');
+  L.push('');
+  L.push('── Vault memoria ──');
+  try {
+    const vault = path.join(HOME, 'Documents', 'TradingView2Claude Vault');
+    if (fs.existsSync(vault)) {
+      L.push('Cartella: ' + vault);
+      const adir = path.join(vault, 'Analisi');
+      const nNotes = fs.existsSync(adir)
+        ? fs.readdirSync(adir).filter(f => f.endsWith('.md')).length : 0;
+      L.push('Note di analisi: ' + nNotes);
+      const cnt = (f) => {
+        try { return fs.readFileSync(path.join(vault, f), 'utf8')
+                       .split('\n').filter(l => l.startsWith('- ')).length; }
+        catch { return 0; }
+      };
+      L.push('Lezioni: ' + cnt('Lezioni.md'));
+      L.push('Previsioni: ' + cnt('Previsioni.md'));
+    } else {
+      L.push('Vault non ancora creato');
+    }
+  } catch (e) { L.push('Errore lettura vault: ' + e.message); }
+
+  function tailLog(file, n) {
+    try {
+      const lines = fs.readFileSync(file, 'utf8').split('\n');
+      return lines.slice(-n).join('\n');
+    } catch { return '(non disponibile)'; }
+  }
+  L.push('');
+  L.push('── Ultime righe del log installer ──');
+  L.push(tailLog(LOG_FILE, 80));
+  L.push('');
+  L.push('── Ultime righe del log chat ──');
+  L.push(tailLog(path.join(LOG_DIR, 'chat.log'), 80));
+
+  let desktop = path.join(HOME, 'Desktop');
+  try { desktop = fs.realpathSync(desktop); } catch { desktop = HOME; }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16);
+  const reportPath = path.join(desktop, `TradingView2Claude-Report-${stamp}.txt`);
+  fs.writeFileSync(reportPath, L.join('\n'));
+  return reportPath;
+}
+
+ipcMain.on('diag:generate', async (event) => {
+  try {
+    const p = await generateDiagnosticReport();
+    shell.showItemInFolder(p);
+    if (!event.sender.isDestroyed()) event.sender.send('diag:done', { ok: true, path: p });
+  } catch (e) {
+    writeLog('[diag] errore: ' + e.message);
+    if (!event.sender.isDestroyed()) event.sender.send('diag:done', { ok: false, error: e.message });
+  }
+});
+
 // Handler 'activate' — chiamato dalla UI con ipc.send('activate', {key})
 ipcMain.on('activate', async (event, { key }) => {
   writeLog(`[license] activate richiesto per key: ${key}`);
