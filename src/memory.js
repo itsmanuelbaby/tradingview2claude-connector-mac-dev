@@ -105,21 +105,32 @@ function significantWords(text) {
 }
 
 // ── Costruisce il contesto da reiniettare prima di una domanda ───
-function buildContext(userMessage) {
+function buildContext(userMessage, lang) {
   ensureVault();
+  const L = (lang === 'en')
+    ? {
+        lessons: '## Lessons learned — keep them in mind, do not repeat these mistakes',
+        predictions: '## Your recent predictions — verify if they were correct',
+        notes: '## Your past analyses (for continuity)',
+      }
+    : {
+        lessons: '## Lezioni apprese — tienine conto, non ripetere questi errori',
+        predictions: '## Le tue previsioni recenti — verifica se sono state centrate',
+        notes: '## Le tue analisi passate (per dare continuità)',
+      };
+
   let ctx = '';
 
   const lessons = readLessons().trim();
   if (lessons && !/^#\s*Lezioni\s*$/i.test(lessons)) {
-    ctx += '## Lezioni apprese — tienine conto, non ripetere questi errori\n'
-         + lessons + '\n\n';
+    ctx += L.lessons + '\n' + lessons + '\n\n';
   }
 
   // Previsioni recenti: ultime ~10 voci → l'assistente le rilegge per
   // verificare se ha centrato o sbagliato, e si auto-calibra.
   const predLines = readPredictions().split('\n').filter(l => l.startsWith('- '));
   if (predLines.length) {
-    ctx += '## Le tue previsioni recenti — verifica se sono state centrate\n';
+    ctx += L.predictions + '\n';
     for (const l of predLines.slice(-10)) ctx += l + '\n';
     ctx += '\n';
   }
@@ -145,7 +156,7 @@ function buildContext(userMessage) {
   const picked = scored.filter(x => x.score > 0).slice(0, MAX_NOTES_IN_CONTEXT);
 
   if (picked.length) {
-    ctx += '## Le tue analisi passate (per dare continuità)\n';
+    ctx += L.notes + '\n';
     for (const item of picked) {
       let content = item.content;
       if (content.length > MAX_NOTE_CHARS) content = content.slice(0, MAX_NOTE_CHARS) + '…';

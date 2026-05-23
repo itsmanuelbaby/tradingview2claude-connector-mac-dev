@@ -16,7 +16,10 @@ const memory = require('./memory');
 const HOME = os.homedir();
 const LOG_DIR  = path.join(HOME, 'Library', 'Logs', 'TradingView2Claude Dev');
 const LOG_FILE = path.join(LOG_DIR, 'chat.log');
-const PERSONA_FILE = path.join(__dirname, 'persona.txt');
+function personaFileFor(lang) {
+  const fname = lang === 'en' ? 'persona-en.txt' : 'persona.txt';
+  return path.join(__dirname, fname);
+}
 
 // Timeout di sicurezza per una singola risposta (analisi con più tool = lente)
 const TURN_TIMEOUT_MS = 180000;
@@ -30,6 +33,15 @@ function setModel(m) {
   if (m === 'opus' || m === 'sonnet' || m === 'haiku') {
     currentModel = m;
     log(`Modello impostato: ${m}`);
+  }
+}
+
+// Lingua dell'assistente (it default)
+let currentLang = 'it';
+function setLang(l) {
+  if (l === 'it' || l === 'en') {
+    currentLang = l;
+    log(`Lingua impostata: ${l}`);
   }
 }
 
@@ -169,8 +181,11 @@ function ask(userMessage, handlers) {
   // Reinietta la memoria: lezioni apprese + analisi passate rilevanti
   let prompt = userMessage;
   try {
-    const ctx = memory.buildContext(userMessage);
-    if (ctx) prompt = ctx + '\n\n# DOMANDA ATTUALE\n' + userMessage;
+    const ctx = memory.buildContext(userMessage, currentLang);
+    if (ctx) {
+      const heading = currentLang === 'en' ? '# CURRENT USER QUESTION' : '# DOMANDA ATTUALE';
+      prompt = ctx + '\n\n' + heading + '\n' + userMessage;
+    }
   } catch (e) { log('memory context error: ' + e.message); }
 
   const args = [
@@ -184,8 +199,10 @@ function ask(userMessage, handlers) {
 
   // Persona personalizzata (append: mantiene la consapevolezza degli strumenti)
   try {
-    if (fs.existsSync(PERSONA_FILE)) {
-      const persona = fs.readFileSync(PERSONA_FILE, 'utf8');
+    let pf = personaFileFor(currentLang);
+    if (!fs.existsSync(pf)) pf = personaFileFor('it'); // fallback
+    if (fs.existsSync(pf)) {
+      const persona = fs.readFileSync(pf, 'utf8');
       if (persona.trim()) args.push('--append-system-prompt', persona);
     }
   } catch (_) {}
@@ -282,4 +299,4 @@ function reset() {
   log('Sessione azzerata');
 }
 
-module.exports = { ask, reset, setModel, findClaudeBinary };
+module.exports = { ask, reset, setModel, setLang, findClaudeBinary };

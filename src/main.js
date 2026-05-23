@@ -548,6 +548,9 @@ ipcMain.on('chat:reset', () => { claudeEngine.reset(); });
 // Cambia il modello AI (opus / sonnet / haiku)
 ipcMain.on('chat:set-model', (_e, model) => { claudeEngine.setModel(model); });
 
+// Cambia la lingua dell'assistente (it / en)
+ipcMain.on('chat:set-lang', (_e, lang) => { claudeEngine.setLang(lang); });
+
 // ── Briefing programmati ─────────────────────────────────────────
 const BRIEFINGS_FILE = path.join(app.getPath('userData'), 'briefings.json');
 

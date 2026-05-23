@@ -205,8 +205,7 @@ body {
 .chat-head .title { font-size: 12.5px; font-weight: 600; letter-spacing: .3px; }
 .chat-head .sub { font-size: 10px; color: var(--gray); margin-left: auto; display:flex; align-items:center; gap:5px; }
 .chat-head .sub .d { width:5px; height:5px; border-radius:50%; background:var(--green); }
-#model-sel {
-  margin-left: auto;
+#model-sel, #lang-sel {
   background: #090909;
   color: var(--lg);
   border: 1px solid var(--bord2);
@@ -218,7 +217,8 @@ body {
   outline: none;
   transition: border-color .15s, color .15s;
 }
-#model-sel:hover { border-color: var(--gold); color: var(--white); }
+#lang-sel { margin-left: auto; padding: 4px 6px; min-width: 42px; }
+#model-sel:hover, #lang-sel:hover { border-color: var(--gold); color: var(--white); }
 
 /* ─── AREA MESSAGGI ─── */
 #messages {
@@ -503,6 +503,10 @@ body {
     <div class="chat-head">
       <span class="hex">⬡</span>
       <span class="title">Assistente di mercato</span>
+      <select id="lang-sel" title="Lingua">
+        <option value="it">IT</option>
+        <option value="en">EN</option>
+      </select>
       <select id="model-sel" title="Modello di analisi">
         <option value="opus">Opus · qualità max</option>
         <option value="sonnet">Sonnet · equilibrato</option>
@@ -588,6 +592,132 @@ body {
 
   const ipc = require('electron').ipcRenderer;
 
+  // ── i18n: dizionario IT / EN ──
+  const I18N = {
+    it: {
+      'tb.connected':'Connesso','tb.brief':'Briefing programmati',
+      'tb.help':'Genera report diagnostico (per supporto)','tb.close':'Chiudi',
+      'chat.assistant':'Assistente di mercato',
+      'model.title':'Modello di analisi','model.opus':'Opus · qualità max',
+      'model.sonnet':'Sonnet · equilibrato','model.haiku':'Haiku · veloce',
+      'lang.title':'Lingua',
+      'welcome.title':'Come posso aiutarti oggi?',
+      'welcome.sub':'Analizzo il grafico in tempo reale e rispondo alle tue domande sui mercati.',
+      'chip.1':'Analizza il grafico attuale e dimmi il trend',
+      'chip.2':'Trova supporti e resistenze principali',
+      'chip.3':"C'è un setup operativo interessante adesso?",
+      'composer.placeholder':'Scrivi un messaggio…','composer.send':'Invia',
+      'composer.hint':'INVIO per inviare · MAIUSC+INVIO per andare a capo',
+      'divider.title':'Trascina per regolare lo spazio',
+      'tv.loading':'Caricamento di TradingView…','tv.recover':'Ricarica il grafico',
+      'tv.reloading':'Ricaricamento di TradingView…',
+      'tv.crashed':'Il grafico ha avuto un problema — recupero automatico in corso…',
+      'tv.crashed2':'Il grafico ha avuto un problema. Riprova a ricaricarlo.',
+      'tv.unresponsive':'Il grafico non risponde.',
+      'tv.loadfail':'Impossibile caricare TradingView. Controlla la connessione.',
+      'brief.title':'Briefing programmati',
+      'brief.sub':"L'assistente eseguirà queste analisi in automatico all'orario impostato (con app aperta).",
+      'brief.close':'Chiudi','brief.empty':'Nessun briefing programmato. Aggiungine uno qui sotto.',
+      'brief.name_ph':'Nome (es. Mattina mercati)',
+      'brief.prompt_ph':'Cosa chiedere? Es: Fammi un report sui mercati: BTC, oro, S&P 500.',
+      'brief.add':'Aggiungi briefing','brief.delete':'Elimina','brief.everyday':'ogni giorno',
+      'brief.notif':'Briefing programmato — ','brief.preparing':'Sto preparando il briefing…',
+      'days_short':['Do','Lu','Ma','Me','Gi','Ve','Sa'],
+      'days_letters':['D','L','M','M','G','V','S'],
+      'tool.thinking':'Sto analizzando il grafico…','error.generic':'Si è verificato un errore.',
+    },
+    en: {
+      'tb.connected':'Connected','tb.brief':'Scheduled briefings',
+      'tb.help':'Generate diagnostic report (for support)','tb.close':'Close',
+      'chat.assistant':'Market Assistant',
+      'model.title':'Analysis model','model.opus':'Opus · max quality',
+      'model.sonnet':'Sonnet · balanced','model.haiku':'Haiku · fast',
+      'lang.title':'Language',
+      'welcome.title':'How can I help you today?',
+      'welcome.sub':'I read the chart in real time and answer your market questions.',
+      'chip.1':'Analyze the current chart and tell me the trend',
+      'chip.2':'Find key support and resistance levels',
+      'chip.3':'Is there an interesting setup right now?',
+      'composer.placeholder':'Write a message…','composer.send':'Send',
+      'composer.hint':'ENTER to send · SHIFT+ENTER for new line',
+      'divider.title':'Drag to adjust the space',
+      'tv.loading':'Loading TradingView…','tv.recover':'Reload chart',
+      'tv.reloading':'Reloading TradingView…',
+      'tv.crashed':'Chart had an issue — recovering automatically…',
+      'tv.crashed2':'Chart had an issue. Try reloading it.',
+      'tv.unresponsive':"Chart isn't responding.",
+      'tv.loadfail':"Couldn't load TradingView. Check your connection.",
+      'brief.title':'Scheduled briefings',
+      'brief.sub':'The assistant will run these analyses automatically at the set time (while app is open).',
+      'brief.close':'Close','brief.empty':'No briefings scheduled. Add one below.',
+      'brief.name_ph':'Name (e.g. Morning markets)',
+      'brief.prompt_ph':'What to ask? e.g. Give me a market report: BTC, gold, S&P 500.',
+      'brief.add':'Add briefing','brief.delete':'Delete','brief.everyday':'every day',
+      'brief.notif':'Scheduled briefing — ','brief.preparing':'Preparing the briefing…',
+      'days_short':['Su','Mo','Tu','We','Th','Fr','Sa'],
+      'days_letters':['S','M','T','W','T','F','S'],
+      'tool.thinking':'Analyzing the chart…','error.generic':'An error occurred.',
+    }
+  };
+  let currentLang = localStorage.getItem('tv2c-lang') || 'it';
+  function t(k) {
+    const d = I18N[currentLang] || I18N.it;
+    return d[k] !== undefined ? d[k] : (I18N.it[k] !== undefined ? I18N.it[k] : k);
+  }
+  function applyI18n() {
+    document.documentElement.lang = currentLang;
+    const sel = (q, fn) => { const e = document.querySelector(q); if (e) fn(e); };
+    const id  = (i, fn) => { const e = document.getElementById(i);   if (e) fn(e); };
+    sel('.tb-status', e => e.textContent = t('tb.connected'));
+    id('btn-brief', e => e.title = t('tb.brief'));
+    id('btn-diag',  e => e.title = t('tb.help'));
+    id('btn-close', e => e.title = t('tb.close'));
+    sel('.chat-head .title', e => e.textContent = t('chat.assistant'));
+    id('model-sel', e => {
+      e.title = t('model.title');
+      const o = (v, k) => { const x = e.querySelector(`option[value="${v}"]`); if (x) x.textContent = t(k); };
+      o('opus','model.opus'); o('sonnet','model.sonnet'); o('haiku','model.haiku');
+    });
+    id('lang-sel', e => e.title = t('lang.title'));
+    sel('#welcome .w-title', e => e.textContent = t('welcome.title'));
+    sel('#welcome .w-sub',   e => e.textContent = t('welcome.sub'));
+    document.querySelectorAll('.chip').forEach((c, i) => {
+      const v = t('chip.' + (i+1));
+      c.textContent = v; c.dataset.q = v;
+    });
+    id('input',    e => e.placeholder = t('composer.placeholder'));
+    id('btn-send', e => e.title = t('composer.send'));
+    sel('.composer-hint', e => e.textContent = t('composer.hint'));
+    id('divider', e => e.title = t('divider.title'));
+    sel('#tv-loading .tv-load-txt', e => e.textContent = t('tv.loading'));
+    id('tv-reload', e => e.title = t('tv.recover'));
+    sel('#brief-modal .modal-head .t', e => e.textContent = t('brief.title'));
+    sel('#brief-modal .modal-sub',     e => e.textContent = t('brief.sub'));
+    id('brief-close',  e => e.title = t('brief.close'));
+    id('brief-name',   e => e.placeholder = t('brief.name_ph'));
+    id('brief-prompt', e => e.placeholder = t('brief.prompt_ph'));
+    id('brief-add',    e => e.textContent = t('brief.add'));
+    // L M M G V S D nella HTML, mappati a Date.getDay() 1,2,3,4,5,6,0
+    const dayMap = [1,2,3,4,5,6,0];
+    document.querySelectorAll('#brief-days label span').forEach((s, i) => {
+      s.textContent = t('days_letters')[dayMap[i]];
+    });
+  }
+
+  // selettore lingua
+  const langSel = document.getElementById('lang-sel');
+  if (langSel) {
+    langSel.value = currentLang;
+    ipc.send('chat:set-lang', currentLang);
+    langSel.addEventListener('change', () => {
+      currentLang = langSel.value;
+      localStorage.setItem('tv2c-lang', currentLang);
+      ipc.send('chat:set-lang', currentLang);
+      applyI18n();
+      if (typeof renderBriefings === 'function') renderBriefings();
+    });
+  }
+
   // ── chiusura finestra ──
   document.getElementById('btn-close').addEventListener('click', function () {
     ipc.send('close-app');
@@ -596,7 +726,6 @@ body {
   // ── briefing programmati ──
   const briefModal = document.getElementById('brief-modal');
   const btnBrief = document.getElementById('btn-brief');
-  const briefDayNames = { 0:'Do', 1:'Lu', 2:'Ma', 3:'Me', 4:'Gi', 5:'Ve', 6:'Sa' };
 
   function esc(s) {
     return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
@@ -607,20 +736,20 @@ body {
     const el = document.getElementById('brief-list');
     el.innerHTML = '';
     if (!list.length) {
-      el.innerHTML = '<div class="brief-empty">Nessun briefing programmato. Aggiungine uno qui sotto.</div>';
+      el.innerHTML = '<div class="brief-empty">' + esc(t('brief.empty')) + '</div>';
       return;
     }
     list.forEach(b => {
       const div = document.createElement('div');
       div.className = 'brief-item';
       const days = (b.days && b.days.length)
-        ? b.days.slice().sort().map(d => briefDayNames[d]).join(' ')
-        : 'ogni giorno';
+        ? b.days.slice().sort().map(d => t('days_short')[d]).join(' ')
+        : t('brief.everyday');
       div.innerHTML =
         '<div class="row">'
-        + '<div class="meta"><b>' + esc(b.name || '(senza nome)') + '</b> · '
-        + esc(b.time) + ' · ' + days + '</div>'
-        + '<button class="del">Elimina</button>'
+        + '<div class="meta"><b>' + esc(b.name || '(no name)') + '</b> · '
+        + esc(b.time) + ' · ' + esc(days) + '</div>'
+        + '<button class="del">' + esc(t('brief.delete')) + '</button>'
         + '</div>'
         + '<div class="pp">' + esc((b.prompt || '').slice(0, 140)) + '</div>';
       div.querySelector('.del').onclick = async () => {
@@ -662,7 +791,7 @@ body {
     const m = document.createElement('div');
     m.className = 'msg user';
     m.innerHTML = '<div class="avatar">B</div><div class="bubble"></div>';
-    m.querySelector('.bubble').textContent = 'Briefing programmato — ' + (info && info.name || '');
+    m.querySelector('.bubble').textContent = t('brief.notif') + (info && info.name || '');
     messages.appendChild(m);
     scrollDown();
     busy = true;
@@ -671,7 +800,7 @@ body {
     streamBuf = '';
     draining = false;
     turnDone = false;
-    toolChip = showTool('Sto preparando il briefing…');
+    toolChip = showTool(t('brief.preparing'));
   });
 
   // ── report diagnostico ──
@@ -826,7 +955,7 @@ body {
     draining = false;
     const b = ensureBubble();
     b.classList.add('err');
-    b.textContent = msg || 'Si è verificato un errore.';
+    b.textContent = msg || t('error.generic');
     curBubble = null;
     turnDone = false;
     busy = false;
@@ -853,7 +982,7 @@ body {
     streamBuf = '';
     draining = false;
     turnDone = false;
-    toolChip = showTool('Sto analizzando il grafico…');
+    toolChip = showTool(t('tool.thinking'));
 
     ipc.send('chat:send', text);
   }
@@ -870,15 +999,15 @@ body {
     if (!tvLoading) return;
     tvLoading.classList.remove('hidden');
     tvLoading.innerHTML = '<div class="tv-spin"></div>'
-      + '<div class="tv-load-txt">' + (message || 'Caricamento di TradingView…') + '</div>'
-      + (withButton ? '<button id="tv-recover">Ricarica il grafico</button>' : '');
+      + '<div class="tv-load-txt">' + (message || t('tv.loading')) + '</div>'
+      + (withButton ? '<button id="tv-recover">' + t('tv.recover') + '</button>' : '');
     const rec = document.getElementById('tv-recover');
     if (rec) rec.addEventListener('click', function () { reloadTV(); });
   }
 
   // ricarica il grafico incorporato
   function reloadTV(message) {
-    showTvLoading(message || 'Ricaricamento di TradingView…', false);
+    showTvLoading(message || t('tv.reloading'), false);
     try { tvView.reloadIgnoringCache(); }
     catch (_) { try { tvView.src = 'https://www.tradingview.com/chart/'; } catch (_) {} }
   }
@@ -891,22 +1020,21 @@ body {
     });
     tvView.addEventListener('did-fail-load', function (e) {
       if (e && e.errorCode === -3) return; // navigazione annullata
-      showTvLoading('Impossibile caricare TradingView. Controlla la connessione.', true);
+      showTvLoading(t('tv.loadfail'), true);
     });
     // il processo del grafico è andato in crash → recupero automatico (una volta)
     function onCrash() {
       if (!autoRecovered) {
         autoRecovered = true;
-        reloadTV('Il grafico ha avuto un problema — recupero automatico in corso…');
+        reloadTV(t('tv.crashed'));
       } else {
-        showTvLoading('Il grafico ha avuto un problema. Riprova a ricaricarlo.', true);
+        showTvLoading(t('tv.crashed2'), true);
       }
     }
     tvView.addEventListener('crashed', onCrash);
     tvView.addEventListener('render-process-gone', onCrash);
-    // il grafico non risponde → offri il recupero manuale
     tvView.addEventListener('unresponsive', function () {
-      showTvLoading('Il grafico non risponde.', true);
+      showTvLoading(t('tv.unresponsive'), true);
     });
     tvView.addEventListener('responsive', function () {
       if (tvLoading) tvLoading.classList.add('hidden');
@@ -939,6 +1067,8 @@ body {
     overlay.classList.remove('active');
   });
 
+  // applica la lingua corrente a tutti i testi
+  applyI18n();
   input.focus();
 })();
 </script>
