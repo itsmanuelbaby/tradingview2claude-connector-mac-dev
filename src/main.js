@@ -523,17 +523,22 @@ ipcMain.on('close-app', () => {
   app.quit();
 });
 
+// ── Coordinamento motore + dashboard ─────────────────────────────
+let engineBusy = false;
+function sendDash(channel, payload) {
+  if (dashWin && !dashWin.isDestroyed()) dashWin.webContents.send(channel, payload);
+}
+
 // ── IPC: Chat dashboard ──────────────────────────────────────────
 // La UI invia 'chat:send' con il testo; il motore risponde in streaming.
-ipcMain.on('chat:send', (event, text) => {
-  const send = (channel, payload) => {
-    if (!event.sender.isDestroyed()) event.sender.send(channel, payload);
-  };
+ipcMain.on('chat:send', (_event, text) => {
+  if (engineBusy) return; // un turno alla volta (utente / briefing)
+  engineBusy = true;
   claudeEngine.ask(String(text || ''), {
-    onText:  (t)     => send('claude:text', t),
-    onTool:  (label) => send('claude:tool', label),
-    onError: (msg)   => send('claude:error', msg),
-    onDone:  ()      => send('claude:done'),
+    onText:  (t)     => sendDash('claude:text', t),
+    onTool:  (label) => sendDash('claude:tool', label),
+    onError: (msg)   => { sendDash('claude:error', msg); engineBusy = false; },
+    onDone:  ()      => { sendDash('claude:done'); engineBusy = false; },
   });
 });
 
@@ -542,6 +547,62 @@ ipcMain.on('chat:reset', () => { claudeEngine.reset(); });
 
 // Cambia il modello AI (opus / sonnet / haiku)
 ipcMain.on('chat:set-model', (_e, model) => { claudeEngine.setModel(model); });
+
+// ── Briefing programmati ─────────────────────────────────────────
+const BRIEFINGS_FILE = path.join(app.getPath('userData'), 'briefings.json');
+
+function loadBriefings() {
+  try { return JSON.parse(fs.readFileSync(BRIEFINGS_FILE, 'utf8')) || []; }
+  catch { return []; }
+}
+function saveBriefings(arr) {
+  try { fs.mkdirSync(path.dirname(BRIEFINGS_FILE), { recursive: true }); } catch (_) {}
+  try { fs.writeFileSync(BRIEFINGS_FILE, JSON.stringify(arr, null, 2)); return true; }
+  catch (e) { writeLog('briefings save error: ' + e.message); return false; }
+}
+
+const briefingFiredKey = new Map();
+function isBriefingDueNow(b, now) {
+  if (b.enabled === false) return false;
+  const parts = String(b.time || '').split(':').map(Number);
+  if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return false;
+  if (Array.isArray(b.days) && b.days.length && !b.days.includes(now.getDay())) return false;
+  if (now.getHours() !== parts[0] || now.getMinutes() !== parts[1]) return false;
+  const key = `${b.id}|${now.toDateString()}|${parts[0]}:${parts[1]}`;
+  if (briefingFiredKey.get(b.id) === key) return false;
+  briefingFiredKey.set(b.id, key);
+  return true;
+}
+
+function fireBriefing(b) {
+  if (!dashWin || dashWin.isDestroyed()) return;
+  if (engineBusy) { writeLog(`[briefing] saltato (motore occupato): ${b.name}`); return; }
+  engineBusy = true;
+  writeLog(`[briefing] firing: ${b.name || b.id}`);
+  sendDash('chat:briefing-start', { name: b.name || 'Briefing programmato' });
+  claudeEngine.ask(String(b.prompt || ''), {
+    onText:  (t) => sendDash('claude:text', t),
+    onTool:  (l) => sendDash('claude:tool', l),
+    onError: (m) => { sendDash('claude:error', m); engineBusy = false; },
+    onDone:  ()  => { sendDash('claude:done'); engineBusy = false; },
+  });
+}
+
+let briefingTimer = null;
+function startBriefingScheduler() {
+  if (briefingTimer) return;
+  briefingTimer = setInterval(() => {
+    const briefings = loadBriefings();
+    if (!briefings.length) return;
+    const now = new Date();
+    for (const b of briefings) {
+      if (isBriefingDueNow(b, now)) { fireBriefing(b); break; }
+    }
+  }, 60 * 1000);
+}
+
+ipcMain.handle('briefings:list', () => loadBriefings());
+ipcMain.handle('briefings:save', (_e, arr) => saveBriefings(Array.isArray(arr) ? arr : []));
 
 // ── App lifecycle ────────────────────────────────────────────────
 app.whenReady().then(async () => {
@@ -574,6 +635,8 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (!mainWin && !dashWin) createDashboardWindow();
   });
+
+  startBriefingScheduler();
 });
 
 app.on('window-all-closed', () => {

@@ -75,6 +75,95 @@ body {
   transition: color .15s, border-color .15s;
 }
 #btn-diag:hover { color: var(--gold); border-color: var(--gold); }
+#btn-brief {
+  -webkit-app-region: no-drag;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--bord2);
+  color: var(--gray);
+  cursor: pointer;
+  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .15s, border-color .15s;
+}
+#btn-brief:hover { color: var(--gold); border-color: var(--gold); }
+#btn-brief svg { display: block; }
+
+/* ─── modale briefing ─── */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.6);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal.show { display: flex; }
+.modal-card {
+  width: 480px; max-width: 92vw; max-height: 86vh;
+  overflow-y: auto;
+  background: var(--surf); color: var(--white);
+  border: 1px solid var(--bord2);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; }
+.modal-head .t { font-size: 12.5px; font-weight: 700; letter-spacing: 1px; color: var(--gold); text-transform: uppercase; }
+.modal-close {
+  background: transparent; border: none; color: var(--lg);
+  font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.modal-close:hover { color: var(--white); }
+.modal-sub { font-size: 11px; color: var(--gray); line-height: 1.5; }
+.brief-list { display: flex; flex-direction: column; gap: 6px; }
+.brief-empty { font-size: 11.5px; color: var(--gray); padding: 10px; text-align: center; }
+.brief-item {
+  background: var(--surf2); border: 1px solid var(--bord);
+  border-radius: 7px; padding: 9px 11px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.brief-item .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.brief-item .meta { font-size: 11.5px; color: var(--lg); }
+.brief-item .meta b { color: var(--gold); }
+.brief-item .pp { font-size: 11px; color: var(--gray); }
+.brief-item .del {
+  background: transparent; border: none; color: var(--gray);
+  font-size: 10.5px; cursor: pointer; padding: 2px 6px;
+}
+.brief-item .del:hover { color: var(--red); }
+.brief-form {
+  border-top: 1px solid var(--bord);
+  padding-top: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.brief-row { display: flex; gap: 8px; }
+.brief-row input, .brief-form textarea {
+  background: #090909; border: 1px solid var(--bord2);
+  border-radius: 6px; color: var(--white);
+  padding: 8px 10px; font-family: inherit; font-size: 12px;
+  outline: none; flex: 1; min-width: 0;
+}
+.brief-form input:focus, .brief-form textarea:focus { border-color: var(--gold); }
+.brief-form textarea { resize: vertical; min-height: 60px; }
+.brief-row input[type="time"] { max-width: 110px; flex: 0 0 auto; }
+.brief-days { display: flex; gap: 5px; }
+.brief-days label {
+  flex: 1; text-align: center; padding: 7px 0;
+  border: 1px solid var(--bord2); border-radius: 5px;
+  font-size: 10.5px; color: var(--lg); cursor: pointer;
+  transition: all .15s;
+}
+.brief-days label:hover { border-color: var(--gold); }
+.brief-days input { display: none; }
+.brief-days label:has(input:checked) {
+  background: rgba(212,160,23,.15); border-color: var(--gold); color: var(--gold);
+}
+#brief-add {
+  background: var(--gold); color: #1A1206; border: none; border-radius: 6px;
+  padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+#brief-add:hover { background: var(--gold2); }
 #btn-close {
   -webkit-app-region: no-drag;
   width: 13px; height: 13px;
@@ -398,6 +487,9 @@ body {
     <span class="tb-status">Connesso</span>
   </div>
   <div class="tb-right">
+    <button id="btn-brief" title="Briefing programmati">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    </button>
     <button id="btn-diag" title="Genera report diagnostico (per supporto)">?</button>
     <button id="btn-close" title="Chiudi"></button>
   </div>
@@ -461,6 +553,35 @@ body {
 <!-- overlay per il trascinamento del divisore -->
 <div id="drag-overlay"></div>
 
+<!-- ══════ MODALE BRIEFING PROGRAMMATI ══════ -->
+<div id="brief-modal" class="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span class="t">Briefing programmati</span>
+      <button id="brief-close" class="modal-close" title="Chiudi">×</button>
+    </div>
+    <div class="modal-sub">L'assistente eseguirà queste analisi in automatico all'orario impostato (con app aperta).</div>
+    <div id="brief-list" class="brief-list"></div>
+    <div class="brief-form">
+      <div class="brief-row">
+        <input id="brief-name" type="text" placeholder="Nome (es. Mattina mercati)">
+        <input id="brief-time" type="time" value="08:00">
+      </div>
+      <div id="brief-days" class="brief-days">
+        <label><input type="checkbox" value="1" checked><span>L</span></label>
+        <label><input type="checkbox" value="2" checked><span>M</span></label>
+        <label><input type="checkbox" value="3" checked><span>M</span></label>
+        <label><input type="checkbox" value="4" checked><span>G</span></label>
+        <label><input type="checkbox" value="5" checked><span>V</span></label>
+        <label><input type="checkbox" value="6"><span>S</span></label>
+        <label><input type="checkbox" value="0"><span>D</span></label>
+      </div>
+      <textarea id="brief-prompt" placeholder="Cosa chiedere? Es: Fammi un report sui mercati: BTC, oro, S&amp;P 500. Trend, livelli chiave, notizie."></textarea>
+      <button id="brief-add">Aggiungi briefing</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -470,6 +591,87 @@ body {
   // ── chiusura finestra ──
   document.getElementById('btn-close').addEventListener('click', function () {
     ipc.send('close-app');
+  });
+
+  // ── briefing programmati ──
+  const briefModal = document.getElementById('brief-modal');
+  const btnBrief = document.getElementById('btn-brief');
+  const briefDayNames = { 0:'Do', 1:'Lu', 2:'Ma', 3:'Me', 4:'Gi', 5:'Ve', 6:'Sa' };
+
+  function esc(s) {
+    return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  }
+
+  async function renderBriefings() {
+    const list = await ipc.invoke('briefings:list');
+    const el = document.getElementById('brief-list');
+    el.innerHTML = '';
+    if (!list.length) {
+      el.innerHTML = '<div class="brief-empty">Nessun briefing programmato. Aggiungine uno qui sotto.</div>';
+      return;
+    }
+    list.forEach(b => {
+      const div = document.createElement('div');
+      div.className = 'brief-item';
+      const days = (b.days && b.days.length)
+        ? b.days.slice().sort().map(d => briefDayNames[d]).join(' ')
+        : 'ogni giorno';
+      div.innerHTML =
+        '<div class="row">'
+        + '<div class="meta"><b>' + esc(b.name || '(senza nome)') + '</b> · '
+        + esc(b.time) + ' · ' + days + '</div>'
+        + '<button class="del">Elimina</button>'
+        + '</div>'
+        + '<div class="pp">' + esc((b.prompt || '').slice(0, 140)) + '</div>';
+      div.querySelector('.del').onclick = async () => {
+        await ipc.invoke('briefings:save', list.filter(x => x.id !== b.id));
+        renderBriefings();
+      };
+      el.appendChild(div);
+    });
+  }
+
+  if (btnBrief) btnBrief.addEventListener('click', async () => {
+    briefModal.classList.add('show');
+    await renderBriefings();
+  });
+  document.getElementById('brief-close').addEventListener('click', () => {
+    briefModal.classList.remove('show');
+  });
+  briefModal.addEventListener('click', (e) => {
+    if (e.target === briefModal) briefModal.classList.remove('show');
+  });
+  document.getElementById('brief-add').addEventListener('click', async () => {
+    const name = document.getElementById('brief-name').value.trim();
+    const time = document.getElementById('brief-time').value;
+    const prompt = document.getElementById('brief-prompt').value.trim();
+    const days = Array.from(document.querySelectorAll('#brief-days input:checked'))
+                      .map(c => parseInt(c.value, 10));
+    if (!time || !prompt) return;
+    const list = await ipc.invoke('briefings:list');
+    list.push({ id: String(Date.now()), name: name || 'Briefing', time, days, prompt, enabled: true });
+    await ipc.invoke('briefings:save', list);
+    document.getElementById('brief-name').value = '';
+    document.getElementById('brief-prompt').value = '';
+    await renderBriefings();
+  });
+
+  // un briefing parte automaticamente: mostra una bolla "utente" + blocca input
+  ipc.on('chat:briefing-start', (e, info) => {
+    if (welcome) welcome.style.display = 'none';
+    const m = document.createElement('div');
+    m.className = 'msg user';
+    m.innerHTML = '<div class="avatar">B</div><div class="bubble"></div>';
+    m.querySelector('.bubble').textContent = 'Briefing programmato — ' + (info && info.name || '');
+    messages.appendChild(m);
+    scrollDown();
+    busy = true;
+    btnSend.disabled = true;
+    curBubble = null;
+    streamBuf = '';
+    draining = false;
+    turnDone = false;
+    toolChip = showTool('Sto preparando il briefing…');
   });
 
   // ── report diagnostico ──
