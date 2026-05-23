@@ -178,7 +178,7 @@ function ask(userMessage, handlers) {
     '--output-format', 'stream-json',
     '--verbose',
     '--model', currentModel,
-    '--allowedTools', 'mcp__tradingview-mcp__*',
+    '--allowedTools', 'mcp__tradingview-mcp__*,WebSearch',
   ];
   if (sessionId) args.push('--resume', sessionId);
 
