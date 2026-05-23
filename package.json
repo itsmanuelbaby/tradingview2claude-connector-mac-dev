@@ -1,6 +1,6 @@
 {
   "name": "tradingview2claude-connector",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TradingView2Claude Connector — Analisi AI del mercato in tempo reale",
   "author": "TradingView2Claude",
   "main": "src/main.js",

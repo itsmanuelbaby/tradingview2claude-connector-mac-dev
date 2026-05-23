@@ -383,6 +383,7 @@ body {
     <div class="step-row" id="s0"><div class="step-num">1</div><div class="step-lbl">Verifica sistema</div></div>
     <div class="step-row" id="s1"><div class="step-num">2</div><div class="step-lbl">Claude Code</div></div>
     <div class="step-row" id="s2"><div class="step-num">3</div><div class="step-lbl">Assistente di mercato</div></div>
+    <div class="step-row" id="s3"><div class="step-num">4</div><div class="step-lbl">Accesso al tuo account Claude</div></div>
 
     <div id="sb-version">v1.0.0</div>
   </div>
@@ -411,12 +412,17 @@ body {
       <h3>✗ Installazione interrotta</h3>
       <p id="b-err-msg"></p>
     </div>
+    <div class="banner" id="b-login" style="background:rgba(212,160,23,.10); border:1px solid var(--gold); display:none;">
+      <h3 style="color:var(--gold)">🔐 Accedi al tuo account Claude</h3>
+      <p id="b-login-msg" style="text-align:left">Abbiamo aperto una finestra di Terminale con il comando <code>claude</code>. Il browser dovrebbe aprirsi automaticamente per il login.<br><br><b>Cosa fare:</b><br>1. Completa il login nel browser<br>2. Quando vedi "Logged in" nel Terminale, chiudi quella finestra<br>3. Torna qui e premi <b>Continua</b></p>
+    </div>
 
     <div id="footer">
       <div class="f-status" id="f-status">Configurazione in corso...</div>
       <button class="btn btn-ghost" onclick="require('electron').ipcRenderer.send('close-app')">Esci</button>
       <button class="btn btn-green" id="btn-launch" style="display:none" onclick="require('electron').ipcRenderer.send('open-dashboard')">▶ Apri la Dashboard</button>
       <button class="btn btn-gold"  id="btn-start"  style="display:none" onclick="doInstall()">Riprova</button>
+      <button class="btn btn-gold"  id="btn-retry-login" style="display:none" onclick="retryLogin()">Continua</button>
     </div>
   </div>
 
@@ -524,10 +530,20 @@ function doInstall() {
   btnStart.style.display = 'none';
   document.getElementById('b-ok').style.display = 'none';
   document.getElementById('b-err').style.display = 'none';
+  document.getElementById('b-login').style.display = 'none';
+  document.getElementById('btn-retry-login').style.display = 'none';
   fStatus.textContent = 'Configurazione in corso...';
   fStatus.className = 'f-status';
   logBody.innerHTML = '';
   ipc.send('start-install');
+}
+
+// L'utente preme "Continua" dopo aver fatto login nel browser
+function retryLogin() {
+  document.getElementById('b-login').style.display = 'none';
+  document.getElementById('btn-retry-login').style.display = 'none';
+  fStatus.textContent = 'Verifica accesso...';
+  ipc.send('retry-login');
 }
 
 // Classifica ogni riga di log per colorarla correttamente
@@ -558,7 +574,18 @@ ipc.on('step', (_, { index, status }) => {
   if (!el) return;
   el.className = 'step-row ' + status;
   const num = el.querySelector('.step-num');
-  num.textContent = status === 'done' ? '✓' : status === 'error' ? '✗' : String(index + 1);
+  num.textContent = status === 'done' ? '✓'
+                  : status === 'error' ? '✗'
+                  : status === 'waiting' ? '⏳'
+                  : String(index + 1);
+});
+
+// Setup in attesa del login utente (overlay + pulsante Continua)
+ipc.on('await-login', (_, { msg }) => {
+  document.getElementById('b-login').style.display = 'block';
+  document.getElementById('btn-retry-login').style.display = 'inline-block';
+  fStatus.textContent = 'In attesa del login Claude…';
+  fStatus.className = 'f-status';
 });
 
 ipc.on('progress', (_, pct) => {

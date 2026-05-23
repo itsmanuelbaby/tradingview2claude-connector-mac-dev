@@ -322,22 +322,56 @@ async function runInstall() {
   try {
     stepEvent(0, 'running');
     await step0_sistema();
-    stepEvent(0, 'done'); progress(33);
+    stepEvent(0, 'done'); progress(25);
 
     stepEvent(1, 'running');
     const claudePath = await step3_claude();
-    stepEvent(1, 'done'); progress(66);
+    stepEvent(1, 'done'); progress(50);
 
     stepEvent(2, 'running');
     await step_assistant(claudePath);
-    stepEvent(2, 'done'); progress(100);
+    stepEvent(2, 'done'); progress(75);
 
-    mainWin?.webContents.send('done', { ok: true });
+    // Step 3: login Claude. Se fallisce con LOGIN_REQUIRED, la UI mostra
+    // overlay; alla pressione di "Continua" il client manda 'retry-login'
+    // che rifa SOLO questo step (gestito sotto).
+    stepEvent(3, 'running');
+    try {
+      await step4_login();
+      stepEvent(3, 'done'); progress(100);
+      mainWin?.webContents.send('done', { ok: true });
+    } catch (e) {
+      // Caso speciale: serve azione utente, non un errore vero
+      if (/login richiesto/i.test(e.message)) {
+        stepEvent(3, 'waiting');
+        mainWin?.webContents.send('await-login', { msg: e.message });
+      } else { throw e; }
+    }
   } catch (e) {
     writeLog(`[ERRORE setup] ${e.stack || e.message}`);
     mainWin?.webContents.send('done', { ok: false, msg: e.message });
   }
 }
+
+// L'utente preme "Continua" dopo il login → ricontrolla solo step 4
+ipcMain.on('retry-login', async () => {
+  function stepEvent(i, s) { mainWin?.webContents.send('step', { index: i, status: s }); }
+  function progress(p)     { mainWin?.webContents.send('progress', p); }
+  stepEvent(3, 'running');
+  try {
+    await step4_login();
+    stepEvent(3, 'done'); progress(100);
+    mainWin?.webContents.send('done', { ok: true });
+  } catch (e) {
+    if (/login richiesto/i.test(e.message)) {
+      stepEvent(3, 'waiting');
+      mainWin?.webContents.send('await-login', { msg: e.message });
+    } else {
+      writeLog(`[ERRORE retry-login] ${e.stack || e.message}`);
+      mainWin?.webContents.send('done', { ok: false, msg: e.message });
+    }
+  }
+});
 
 // ── Verifica se il setup è già completo ──────────────────────────
 async function isSetupComplete() {
@@ -345,10 +379,66 @@ async function isSetupComplete() {
   if (!claude) return false;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
-    return !!(cfg && cfg.mcpServers && cfg.mcpServers['tradingview-mcp']);
+    const hasMcp = !!(cfg && cfg.mcpServers && cfg.mcpServers['tradingview-mcp']);
+    const isLogged = !!(cfg && cfg.oauthAccount && cfg.oauthAccount.emailAddress);
+    return hasMcp && isLogged;
   } catch {
     return false;
   }
+}
+
+// ── Verifica se l'utente ha fatto login a Claude ─────────────────
+// Claude CLI salva lo stato OAuth in ~/.claude.json sotto oauthAccount.
+// Se l'utente non ha mai fatto `claude` interattivo, il campo è assente.
+function isClaudeLoggedIn() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
+    return !!(cfg && cfg.oauthAccount && cfg.oauthAccount.emailAddress);
+  } catch {
+    return false;
+  }
+}
+
+function getClaudeUserEmail() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
+    return cfg?.oauthAccount?.emailAddress || null;
+  } catch { return null; }
+}
+
+// ── Step 4: Login Claude (apre Terminale per OAuth interattivo) ──
+// Claude headless (-p) non può fare OAuth: serve una sessione TTY.
+// Apriamo Terminal.app con `claude` per scatenare il flusso login;
+// l'utente completa nel browser, noi attendiamo che lo state cambi.
+async function step4_login() {
+  if (isClaudeLoggedIn()) {
+    const email = getClaudeUserEmail();
+    sendLog(`Accesso Claude già attivo${email ? ' (' + email + ')' : ''}`, mainWin);
+    return;
+  }
+  sendLog('Apro Terminale per il login Claude (browser OAuth)...', mainWin);
+
+  if (IS_MAC) {
+    // osascript apre Terminal.app con `claude` già digitato e in esecuzione.
+    // Claude rileva che non sei loggato e apre automaticamente il browser per OAuth.
+    try {
+      await run('osascript', [
+        '-e', 'tell application "Terminal" to activate',
+        '-e', 'tell application "Terminal" to do script "claude"',
+      ], { ignoreError: true });
+    } catch (_) {}
+  } else if (IS_WIN) {
+    // Apre PowerShell con `claude` interattivo
+    try {
+      await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', 'claude'],
+        { ignoreError: true, shell: false });
+    } catch (_) {}
+  }
+
+  // Notifica la UI: serve azione utente. Restiamo in attesa: la UI mostrerà
+  // un overlay "completa il login" e l'utente premerà "Continua" che farà
+  // ripartire questo step. Senza login NON si va avanti.
+  throw new Error('Login richiesto: completa l\'accesso a Claude nel browser appena aperto, poi premi "Continua".');
 }
 
 // ── Verifica licenza all'avvio (con tolleranza offline) ──────────
@@ -615,14 +705,19 @@ app.whenReady().then(async () => {
   writeLog(`Architettura: ${process.arch}`);
   try { require('./memory').ensureVault(); } catch (_) {}
 
-  // Flusso di avvio: dashboard solo se licenza valida e setup completo,
-  // altrimenti schermata di setup/licenza.
+  // Flusso di avvio: dashboard solo se licenza valida E setup completo
+  // (Claude installato + MCP registrato + utente loggato a Claude).
+  // Se manca anche solo il login Claude, vai alla schermata setup che mostra
+  // il pulsante "Continua" per riaprire il Terminale.
   let goDashboard = false;
   const lic = loadLicense();
   if (lic && lic.key) {
     const status = await verifyLicenseStatus(lic.key);
     writeLog(`[avvio] stato licenza: ${status}`);
-    if (status !== 'suspended' && await isSetupComplete()) {
+    const setupOk = await isSetupComplete();
+    const loggedIn = isClaudeLoggedIn();
+    writeLog(`[avvio] setupComplete=${setupOk} loggedIn=${loggedIn}`);
+    if (status !== 'suspended' && setupOk && loggedIn) {
       goDashboard = true;
     }
   }

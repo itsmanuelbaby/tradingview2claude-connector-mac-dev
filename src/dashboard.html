@@ -615,6 +615,8 @@ body {
       'tv.crashed2':'Il grafico ha avuto un problema. Riprova a ricaricarlo.',
       'tv.unresponsive':'Il grafico non risponde.',
       'tv.loadfail':'Impossibile caricare TradingView. Controlla la connessione.',
+      'tv.notready':'Sto ancora caricando TradingView. Attendi un attimo e riprova.',
+      'composer.tvloading':'Caricamento di TradingView in corso…',
       'brief.title':'Briefing programmati',
       'brief.sub':"L'assistente eseguirà queste analisi in automatico all'orario impostato (con app aperta).",
       'brief.close':'Chiudi','brief.empty':'Nessun briefing programmato. Aggiungine uno qui sotto.',
@@ -647,6 +649,8 @@ body {
       'tv.crashed2':'Chart had an issue. Try reloading it.',
       'tv.unresponsive':"Chart isn't responding.",
       'tv.loadfail':"Couldn't load TradingView. Check your connection.",
+      'tv.notready':"I'm still loading TradingView. Wait a moment and try again.",
+      'composer.tvloading':'TradingView is loading…',
       'brief.title':'Scheduled briefings',
       'brief.sub':'The assistant will run these analyses automatically at the set time (while app is open).',
       'brief.close':'Close','brief.empty':'No briefings scheduled. Add one below.',
@@ -970,6 +974,14 @@ body {
   function send() {
     const text = input.value.trim();
     if (!text || busy) return;
+    // Gate: se TradingView non è pronto, l'MCP non vedrebbe target
+    // (tab_count: 0) e l'assistente risponderebbe "non vedo il grafico".
+    // Aspettiamo prima che il webview abbia finito di caricare almeno
+    // una volta — il debug target CDP appare solo dopo did-finish-load.
+    if (!tvReady) {
+      addAssistantNotice(t('tv.notready'));
+      return;
+    }
     busy = true;
     btnSend.disabled = true;
     if (welcome) welcome.style.display = 'none';
@@ -985,6 +997,26 @@ body {
     toolChip = showTool(t('tool.thinking'));
 
     ipc.send('chat:send', text);
+  }
+
+  // ── Stato readiness webview TradingView ──
+  // Diventa true al primo did-finish-load; resta true anche se il webview
+  // ricarica (l'utente naviga). Diventa di nuovo false solo su crash.
+  let tvReady = false;
+  function setTvReady(ready) {
+    tvReady = ready;
+    btnSend.disabled = !ready || busy;
+    input.placeholder = ready ? t('composer.placeholder') : t('composer.tvloading');
+  }
+
+  // Mostra un messaggio informativo dall'assistente (non un errore tecnico)
+  function addAssistantNotice(text) {
+    const div = document.createElement('div');
+    div.className = 'msg msg-assistant';
+    div.innerHTML = '<div class="bubble"></div>';
+    div.querySelector('.bubble').textContent = text;
+    msgsBox.appendChild(div);
+    msgsBox.scrollTop = msgsBox.scrollHeight;
   }
 
   // ── TRADINGVIEW incorporato: caricamento + auto-recupero ──
@@ -1018,12 +1050,20 @@ body {
     tvView.addEventListener('did-stop-loading', function () {
       if (tvLoading) tvLoading.classList.add('hidden');
     });
+    // did-finish-load = il DOM è pronto E il target CDP è registrato.
+    // Solo qui l'MCP server può davvero "vedere" il grafico via 9222.
+    // Aggiungiamo 800ms di grazia per essere sicuri che il target sia esposto.
+    tvView.addEventListener('did-finish-load', function () {
+      setTimeout(function () { setTvReady(true); }, 800);
+    });
     tvView.addEventListener('did-fail-load', function (e) {
       if (e && e.errorCode === -3) return; // navigazione annullata
+      setTvReady(false);
       showTvLoading(t('tv.loadfail'), true);
     });
     // il processo del grafico è andato in crash → recupero automatico (una volta)
     function onCrash() {
+      setTvReady(false);
       if (!autoRecovered) {
         autoRecovered = true;
         reloadTV(t('tv.crashed'));
@@ -1034,12 +1074,18 @@ body {
     tvView.addEventListener('crashed', onCrash);
     tvView.addEventListener('render-process-gone', onCrash);
     tvView.addEventListener('unresponsive', function () {
+      setTvReady(false);
       showTvLoading(t('tv.unresponsive'), true);
     });
     tvView.addEventListener('responsive', function () {
       if (tvLoading) tvLoading.classList.add('hidden');
+      // Dopo unresponsive→responsive aspettiamo un attimo prima di riabilitare
+      setTimeout(function () { setTvReady(true); }, 500);
     });
   }
+
+  // Stato iniziale: TradingView ancora in caricamento → composer disabilitato
+  setTvReady(false);
 
   // ── DIVISORE trascinabile (ridimensiona i due pannelli) ──
   const split    = document.getElementById('split');
