@@ -12,10 +12,11 @@ const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 
-const VAULT_DIR    = path.join(os.homedir(), 'Documents', 'TradingView2Claude Vault');
-const NOTES_DIR    = path.join(VAULT_DIR, 'Analisi');
-const LESSONS_FILE = path.join(VAULT_DIR, 'Lezioni.md');
-const README_FILE  = path.join(VAULT_DIR, 'Leggimi.md');
+const VAULT_DIR        = path.join(os.homedir(), 'Documents', 'TradingView2Claude Vault');
+const NOTES_DIR        = path.join(VAULT_DIR, 'Analisi');
+const LESSONS_FILE     = path.join(VAULT_DIR, 'Lezioni.md');
+const PREVISIONS_FILE  = path.join(VAULT_DIR, 'Previsioni.md');
+const README_FILE      = path.join(VAULT_DIR, 'Leggimi.md');
 
 const MAX_NOTES_IN_CONTEXT = 5;   // quante analisi passate reiniettare
 const MAX_NOTE_CHARS       = 900; // troncamento per nota nel contesto
@@ -30,12 +31,21 @@ function ensureVault() {
         'Insegnamenti ed errori da non ripetere. L\'assistente aggiunge qui ' +
         'ciò che impara; puoi modificare o aggiungere note a mano.\n\n');
     }
+    if (!fs.existsSync(PREVISIONS_FILE)) {
+      fs.writeFileSync(PREVISIONS_FILE,
+        '# Previsioni\n\n' +
+        'Registro delle previsioni operative formulate dall\'assistente. ' +
+        'Ogni nuova previsione viene aggiunta in coda. L\'assistente le rilegge ' +
+        'per verificare di volta in volta se ha centrato o sbagliato, e si ' +
+        'auto-calibra di conseguenza.\n\n');
+    }
     if (!fs.existsSync(README_FILE)) {
       fs.writeFileSync(README_FILE,
         '# TradingView2Claude — Memoria\n\n' +
-        'Archivio delle analisi dell\'assistente di mercato.\n\n' +
+        'Archivio della memoria dell\'assistente di mercato.\n\n' +
         '- **Analisi/** — una nota per ogni analisi svolta\n' +
-        '- **Lezioni.md** — insegnamenti accumulati nel tempo\n\n' +
+        '- **Lezioni.md** — insegnamenti accumulati nel tempo\n' +
+        '- **Previsioni.md** — registro delle previsioni operative formulate\n\n' +
         'Apri questa cartella come vault in Obsidian per consultarla.\n');
     }
   } catch (_) {}
@@ -44,6 +54,11 @@ function ensureVault() {
 // ── Lettura "Lezioni" ────────────────────────────────────────────
 function readLessons() {
   try { return fs.readFileSync(LESSONS_FILE, 'utf8'); } catch { return ''; }
+}
+
+// ── Lettura "Previsioni" ─────────────────────────────────────────
+function readPredictions() {
+  try { return fs.readFileSync(PREVISIONS_FILE, 'utf8'); } catch { return ''; }
 }
 
 // ── Elenco note (più recenti per prime) ──────────────────────────
@@ -80,6 +95,15 @@ function buildContext(userMessage) {
   if (lessons && !/^#\s*Lezioni\s*$/i.test(lessons)) {
     ctx += '## Lezioni apprese — tienine conto, non ripetere questi errori\n'
          + lessons + '\n\n';
+  }
+
+  // Previsioni recenti: ultime ~10 voci → l'assistente le rilegge per
+  // verificare se ha centrato o sbagliato, e si auto-calibra.
+  const predLines = readPredictions().split('\n').filter(l => l.startsWith('- '));
+  if (predLines.length) {
+    ctx += '## Le tue previsioni recenti — verifica se sono state centrate\n';
+    for (const l of predLines.slice(-10)) ctx += l + '\n';
+    ctx += '\n';
   }
 
   const notes = listNotes();
@@ -156,10 +180,27 @@ function extractLessons(answer) {
   return found.length;
 }
 
+// ── Estrae righe [PREVISIONE] e le aggiunge a Previsioni.md ──────
+function extractPredictions(answer) {
+  const found = [];
+  String(answer || '').split('\n').forEach(line => {
+    const m = line.match(/\[PREVISIONE\]\s*(.+)/i);
+    if (m && m[1].trim()) found.push(m[1].trim());
+  });
+  if (!found.length) return 0;
+  ensureVault();
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+  let add = '';
+  for (const p of found) add += `- (${stamp}) ${p}\n`;
+  try { fs.appendFileSync(PREVISIONS_FILE, add); } catch (_) {}
+  return found.length;
+}
+
 module.exports = {
   VAULT_DIR,
   ensureVault,
   buildContext,
   saveNote,
   extractLessons,
+  extractPredictions,
 };

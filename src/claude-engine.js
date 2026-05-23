@@ -106,10 +106,10 @@ function friendlyTool(name) {
   return 'Sto consultando TradingView…';
 }
 
-// ── Rimuove le righe [LEZIONE] dal testo mostrato all'utente ─────
-// (le lezioni vengono salvate nel vault, non mostrate in chat)
+// ── Rimuove dal testo le righe [LEZIONE] e [PREVISIONE] ──────────
+// (vengono salvate nel vault, non mostrate in chat)
 function stripLessons(text) {
-  return String(text || '').replace(/^[ \t]*\[LEZIONE\][^\n]*\n?/gim, '');
+  return String(text || '').replace(/^[ \t]*\[(LEZIONE|PREVISIONE)\][^\n]*\n?/gim, '');
 }
 
 // ── Interpreta una riga NDJSON dello stream ──────────────────────
@@ -218,10 +218,11 @@ function ask(userMessage, handlers) {
       handlers.onError(errMsg);
       return;
     }
-    // Successo → salva l'analisi nel vault ed estrai eventuali lezioni
+    // Successo → salva l'analisi nel vault, estrai lezioni e previsioni
     if (state.rawAnswer.trim()) {
       try {
         memory.extractLessons(state.rawAnswer);
+        memory.extractPredictions(state.rawAnswer);
         memory.saveNote(userMessage, stripLessons(state.rawAnswer).trim());
       } catch (e) { log('memory save error: ' + e.message); }
     }
