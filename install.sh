@@ -27,6 +27,27 @@ fi
 echo "  Architettura rilevata: $ARCH"
 echo ""
 
+# ── Disinstallazione versione precedente (se presente) ──────────
+# Garantisce che il cliente esegua davvero la nuova build,
+# senza il rischio di confusione tra vecchia e nuova versione.
+# Licenza, vault Obsidian e config Claude restano intatti
+# (vivono in $HOME, non in /Applications).
+TARGET="/Applications/${APP_NAME}.app"
+if [ -d "$TARGET" ] || pgrep -f "$APP_NAME" > /dev/null 2>&1; then
+  echo "  [0/4] Rimozione versione precedente..."
+  # Chiude l'app se è aperta (più garbo possibile, poi forza)
+  osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true
+  sleep 1
+  pkill -f "$APP_NAME" 2>/dev/null || true
+  sleep 1
+  if [ -d "$TARGET" ]; then
+    rm -rf "$TARGET" 2>/dev/null || sudo rm -rf "$TARGET"
+  fi
+  echo "         Versione precedente rimossa."
+  echo "         (Licenza, memoria e login Claude preservati)"
+  echo ""
+fi
+
 # Download
 DMG_URL="https://github.com/${REPO}/releases/latest/download/${DMG_NAME}"
 TMP_DMG="/tmp/${DMG_NAME}"
