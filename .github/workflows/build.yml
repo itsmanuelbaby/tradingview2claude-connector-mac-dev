@@ -34,8 +34,18 @@ jobs:
       - name: Setup bundled-mcp
         run: |
           git clone --depth 1 https://github.com/LewisWJackson/tradingview-mcp-jackson bundled-mcp
-          # L'MCP deve riconoscere anche il TradingView incorporato (target CDP di tipo "webview")
-          sed -i '' "s/t.type === 'page'/(t.type === 'page' || t.type === 'webview')/g" bundled-mcp/src/connection.js
+          # L'MCP deve riconoscere anche il TradingView incorporato come target
+          # CDP di tipo "webview". Il pattern compare in più file (connection.js,
+          # core/tab.js, ...), quindi patchiamo TUTTI i .js sotto src/ per essere
+          # robusti a future modifiche upstream.
+          grep -rl "t\.type === 'page'" bundled-mcp/src \
+            | xargs sed -i '' "s/t\.type === 'page'/(t.type === 'page' || t.type === 'webview')/g"
+          # Verifica: deve patchare almeno 2 file (connection.js + tab.js)
+          PATCHED=$(grep -rl "t.type === 'page' || t.type === 'webview'" bundled-mcp/src | wc -l | tr -d ' ')
+          echo "File MCP patchati: $PATCHED"
+          if [ "$PATCHED" -lt 2 ]; then
+            echo "ERRORE: patch incompleta (atteso almeno 2 file)"; exit 1
+          fi
           cd bundled-mcp && npm install && cd ..
           # Rimuove la cartella .git: inutile nell'app, contiene file read-only
           # che bloccano la rimozione della quarantena (xattr) all'installazione
