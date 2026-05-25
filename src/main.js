@@ -16,6 +16,20 @@ const claudeEngine = require('./claude-engine');
 // Porta debug: espone il TradingView incorporato all'MCP (server.js)
 app.commandLine.appendSwitch('remote-debugging-port', '9222');
 
+// ── Stabilità GPU (anti-blackscreen) ─────────────────────────────
+// Quando l'MCP fa la prima call CDP (es. capture_screenshot del webview)
+// il GPU process di Electron può andare in crash su alcuni Mac, causando
+// schermata nera totale. Forziamo il backend Metal su Apple Silicon (più
+// stabile dell'OpenGL legacy) e disabilitiamo decoder video accelerati
+// che storicamente generano crash sotto carico CDP off-screen.
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('use-angle', 'metal');
+  app.commandLine.appendSwitch('disable-features',
+    'UseChromeOSDirectVideoDecoder,VaapiVideoDecoder,VaapiVideoEncoder');
+}
+// In aggiunta: niente sandbox sul GPU sub-process (più stabile su macOS)
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+
 // ── Costanti ─────────────────────────────────────────────────────
 const HOME    = os.homedir();
 const IS_MAC  = process.platform === 'darwin';
@@ -135,7 +149,48 @@ function createDashboardWindow() {
   });
   dashWin.loadFile(path.join(__dirname, 'dashboard.html'));
   dashWin.on('closed', () => { dashWin = null; });
+
+  // ── Auto-recovery anti-blackscreen ──
+  // Se il renderer della dashboard va in crash (GPU compositor, OOM, errore JS
+  // fatale), Electron emette 'render-process-gone'. Ricarichiamo la finestra
+  // automaticamente: l'utente vede uno sfarfallio nero di ~1 secondo invece
+  // di restare bloccato in una schermata morta.
+  dashWin.webContents.on('render-process-gone', (_e, details) => {
+    writeLog(`[dashboard] render-process-gone: ${JSON.stringify(details)}`);
+    try {
+      if (dashWin && !dashWin.isDestroyed()) dashWin.reload();
+    } catch (_) {}
+  });
+  dashWin.webContents.on('unresponsive', () => {
+    writeLog('[dashboard] window unresponsive — auto-reload in 3s');
+    setTimeout(() => {
+      try {
+        if (dashWin && !dashWin.isDestroyed() && dashWin.webContents.isUnresponsive?.()) {
+          dashWin.reload();
+        }
+      } catch (_) {}
+    }, 3000);
+  });
+
+  // Cmd+R manuale come escape valve sempre disponibile
+  dashWin.webContents.on('before-input-event', (event, input) => {
+    if ((input.meta || input.control) && input.key.toLowerCase() === 'r') {
+      try { dashWin.reload(); } catch (_) {}
+      event.preventDefault();
+    }
+  });
 }
+
+// Crash del GPU process globale: Electron a volte può recuperare da solo,
+// ma se la dashboard è aperta forziamo un reload come safety net.
+app.on('child-process-gone', (_e, details) => {
+  writeLog(`[app] child-process-gone: ${JSON.stringify(details)}`);
+  if (details.type === 'GPU' && dashWin && !dashWin.isDestroyed()) {
+    setTimeout(() => {
+      try { dashWin.reload(); } catch (_) {}
+    }, 500);
+  }
+});
 
 // Fase 3 — TradingView è incorporato nella dashboard (vedi dashboard.html):
 // nessun posizionamento di finestre, nessun permesso Accessibilità.
