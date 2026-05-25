@@ -416,6 +416,10 @@ body {
       <h3 style="color:var(--gold)">🔐 Accedi al tuo account Claude</h3>
       <p id="b-login-msg" style="text-align:left">Abbiamo aperto una finestra di Terminale con il comando <code>claude</code>. Il browser dovrebbe aprirsi automaticamente per il login.<br><br><b>Cosa fare:</b><br>1. Completa il login nel browser<br>2. Quando vedi "Logged in" nel Terminale, chiudi quella finestra<br>3. Torna qui e premi <b>Continua</b></p>
     </div>
+    <div class="banner" id="b-confirm" style="background:rgba(76,175,80,.10); border:1px solid var(--green); display:none;">
+      <h3 style="color:var(--green)">✓ Sei già loggato a Claude</h3>
+      <p id="b-confirm-msg" style="text-align:left">Risulti collegato come <b id="b-confirm-email">—</b>.<br>Per continuare premi <b>Continua</b>. Se vuoi usare un altro account Claude, fai logout dal Terminale prima.</p>
+    </div>
 
     <div id="footer">
       <div class="f-status" id="f-status">Configurazione in corso...</div>
@@ -423,6 +427,7 @@ body {
       <button class="btn btn-green" id="btn-launch" style="display:none" onclick="require('electron').ipcRenderer.send('open-dashboard')">▶ Apri la Dashboard</button>
       <button class="btn btn-gold"  id="btn-start"  style="display:none" onclick="doInstall()">Riprova</button>
       <button class="btn btn-gold"  id="btn-retry-login" style="display:none" onclick="retryLogin()">Continua</button>
+      <button class="btn btn-green" id="btn-confirm-login" style="display:none" onclick="confirmExistingLogin()">Continua</button>
     </div>
   </div>
 
@@ -531,7 +536,9 @@ function doInstall() {
   document.getElementById('b-ok').style.display = 'none';
   document.getElementById('b-err').style.display = 'none';
   document.getElementById('b-login').style.display = 'none';
+  document.getElementById('b-confirm').style.display = 'none';
   document.getElementById('btn-retry-login').style.display = 'none';
+  document.getElementById('btn-confirm-login').style.display = 'none';
   fStatus.textContent = 'Configurazione in corso...';
   fStatus.className = 'f-status';
   logBody.innerHTML = '';
@@ -544,6 +551,14 @@ function retryLogin() {
   document.getElementById('btn-retry-login').style.display = 'none';
   fStatus.textContent = 'Verifica accesso...';
   ipc.send('retry-login');
+}
+
+// L'utente conferma di voler procedere con il login esistente
+function confirmExistingLogin() {
+  document.getElementById('b-confirm').style.display = 'none';
+  document.getElementById('btn-confirm-login').style.display = 'none';
+  fStatus.textContent = 'Conferma...';
+  ipc.send('confirm-existing-login');
 }
 
 // Classifica ogni riga di log per colorarla correttamente
@@ -585,6 +600,15 @@ ipc.on('await-login', (_, { msg }) => {
   document.getElementById('b-login').style.display = 'block';
   document.getElementById('btn-retry-login').style.display = 'inline-block';
   fStatus.textContent = 'In attesa del login Claude…';
+  fStatus.className = 'f-status';
+});
+
+// Setup: utente già loggato, ma deve confermare al primo install
+ipc.on('await-confirm', (_, { msg, email }) => {
+  if (email) document.getElementById('b-confirm-email').textContent = email;
+  document.getElementById('b-confirm').style.display = 'block';
+  document.getElementById('btn-confirm-login').style.display = 'inline-block';
+  fStatus.textContent = 'Conferma richiesta…';
   fStatus.className = 'f-status';
 });
 

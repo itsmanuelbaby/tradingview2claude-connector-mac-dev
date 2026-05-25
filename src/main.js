@@ -387,17 +387,21 @@ async function runInstall() {
     await step_assistant(claudePath);
     stepEvent(2, 'done'); progress(75);
 
-    // Step 3: login Claude. Se fallisce con LOGIN_REQUIRED, la UI mostra
-    // overlay; alla pressione di "Continua" il client manda 'retry-login'
-    // che rifa SOLO questo step (gestito sotto).
+    // Step 4: login Claude. Tre esiti possibili:
+    // - successo silenzioso (era già loggato + setup già confermato) → done
+    // - alreadyLoggedIn (loggato MA prima installazione) → mostra banner CONFERMA
+    // - login richiesto (non loggato) → mostra banner LOGIN (Terminale aperto)
     stepEvent(3, 'running');
     try {
       await step4_login();
+      markSetupAcknowledged();    // Crea flag → prossimi avvii skippano
       stepEvent(3, 'done'); progress(100);
       mainWin?.webContents.send('done', { ok: true });
     } catch (e) {
-      // Caso speciale: serve azione utente, non un errore vero
-      if (/login richiesto/i.test(e.message)) {
+      if (e.alreadyLoggedIn) {
+        stepEvent(3, 'waiting');
+        mainWin?.webContents.send('await-confirm', { msg: e.message, email: e.email });
+      } else if (/login richiesto/i.test(e.message)) {
         stepEvent(3, 'waiting');
         mainWin?.webContents.send('await-login', { msg: e.message });
       } else { throw e; }
@@ -408,23 +412,66 @@ async function runInstall() {
   }
 }
 
-// L'utente preme "Continua" dopo il login → ricontrolla solo step 4
+// L'utente preme "Continua" dopo il login (o conferma essendo già loggato)
+// → ricontrolla solo step 4
 ipcMain.on('retry-login', async () => {
   function stepEvent(i, s) { mainWin?.webContents.send('step', { index: i, status: s }); }
   function progress(p)     { mainWin?.webContents.send('progress', p); }
   stepEvent(3, 'running');
   try {
     await step4_login();
+    markSetupAcknowledged();
     stepEvent(3, 'done'); progress(100);
     mainWin?.webContents.send('done', { ok: true });
   } catch (e) {
-    if (/login richiesto/i.test(e.message)) {
+    if (e.alreadyLoggedIn) {
+      stepEvent(3, 'waiting');
+      mainWin?.webContents.send('await-confirm', { msg: e.message, email: e.email });
+    } else if (/login richiesto/i.test(e.message)) {
       stepEvent(3, 'waiting');
       mainWin?.webContents.send('await-login', { msg: e.message });
     } else {
       writeLog(`[ERRORE retry-login] ${e.stack || e.message}`);
       mainWin?.webContents.send('done', { ok: false, msg: e.message });
     }
+  }
+});
+
+// L'utente preme "Continua" per accettare il login esistente (era già loggato)
+ipcMain.on('confirm-existing-login', () => {
+  function stepEvent(i, s) { mainWin?.webContents.send('step', { index: i, status: s }); }
+  function progress(p)     { mainWin?.webContents.send('progress', p); }
+  if (isClaudeLoggedIn()) {
+    markSetupAcknowledged();
+    stepEvent(3, 'done'); progress(100);
+    mainWin?.webContents.send('done', { ok: true });
+  } else {
+    // Edge case: l'utente ha fatto logout fra il banner e il click
+    stepEvent(3, 'waiting');
+    mainWin?.webContents.send('await-login', {
+      msg: 'Non risulti più loggato. Apri il Terminale e fai login a Claude.'
+    });
+  }
+});
+
+// IPC per la dashboard: chi è loggato? (usato dal popup di benvenuto)
+ipcMain.handle('claude:get-account', () => getClaudeAccount());
+
+// IPC per la dashboard: apri terminale per fare login a Claude
+// (chiamato dal toast "non loggato")
+ipcMain.on('open-claude-login-terminal', async () => {
+  if (IS_MAC) {
+    try {
+      await run('osascript', [
+        '-e', 'tell application "Terminal" to activate',
+        '-e', 'tell application "Terminal" to do script "claude"',
+      ], { ignoreError: true });
+    } catch (_) {}
+  } else if (IS_WIN) {
+    try {
+      await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', 'claude'],
+        { ignoreError: true, shell: false });
+    } catch (_) {}
   }
 });
 
@@ -436,7 +483,10 @@ async function isSetupComplete() {
     const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
     const hasMcp = !!(cfg && cfg.mcpServers && cfg.mcpServers['tradingview-mcp']);
     const isLogged = !!(cfg && cfg.oauthAccount && cfg.oauthAccount.emailAddress);
-    return hasMcp && isLogged;
+    // Anche il flag "setup confermato dall'utente" deve esistere — così la
+    // primissima volta dopo install l'utente passa OBBLIGATORIAMENTE per la
+    // schermata di benvenuto/conferma, anche se era già loggato.
+    return hasMcp && isLogged && isSetupAcknowledged();
   } catch {
     return false;
   }
@@ -461,21 +511,67 @@ function getClaudeUserEmail() {
   } catch { return null; }
 }
 
+// Restituisce informazioni complete sull'account Claude per il popup di benvenuto
+function getClaudeAccount() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'));
+    const o = cfg?.oauthAccount;
+    if (o && o.emailAddress) {
+      return {
+        loggedIn: true,
+        email: o.emailAddress,
+        displayName: o.displayName || o.emailAddress.split('@')[0],
+        organization: o.organizationName || null,
+      };
+    }
+  } catch (_) {}
+  return { loggedIn: false };
+}
+
+// ── Flag "setup obbligatorio completato" ────────────────────────
+// Forziamo l'utente a passare per la schermata di benvenuto/login Claude
+// AL PRIMO avvio dopo ogni installazione, anche se l'utente aveva già
+// loggato in una versione precedente (es. reinstall). Il file esiste solo
+// dopo che l'utente ha esplicitamente premuto "Continua" nello step 4.
+const SETUP_DONE_FLAG = path.join(HOME, '.tv2claude_setup_done');
+function isSetupAcknowledged() {
+  return fs.existsSync(SETUP_DONE_FLAG);
+}
+function markSetupAcknowledged() {
+  try { fs.writeFileSync(SETUP_DONE_FLAG, new Date().toISOString()); }
+  catch (e) { writeLog('setup-flag write error: ' + e.message); }
+}
+
 // ── Step 4: Login Claude (apre Terminale per OAuth interattivo) ──
 // Claude headless (-p) non può fare OAuth: serve una sessione TTY.
 // Apriamo Terminal.app con `claude` per scatenare il flusso login;
 // l'utente completa nel browser, noi attendiamo che lo state cambi.
+//
+// AL PRIMO AVVIO dopo una nuova installazione, anche se l'utente è già
+// loggato (es. dal lavoro o da versione precedente), forziamo la conferma:
+// mostriamo un banner verde "Sei loggato come X — premi Continua".
+// Solo dopo Continua creiamo il flag e procediamo.
 async function step4_login() {
   if (isClaudeLoggedIn()) {
+    if (isSetupAcknowledged()) {
+      // Setup già completato in passato → skip silenzioso
+      const email = getClaudeUserEmail();
+      sendLog(`Accesso Claude già attivo${email ? ' (' + email + ')' : ''}`, mainWin);
+      return;
+    }
+    // Primo avvio dopo install: anche se loggato, l'utente deve confermare
     const email = getClaudeUserEmail();
-    sendLog(`Accesso Claude già attivo${email ? ' (' + email + ')' : ''}`, mainWin);
-    return;
+    sendLog(`Già loggato a Claude come ${email}. Conferma richiesta.`, mainWin);
+    // Errore speciale: la UI mostra il banner di CONFERMA (non quello di login)
+    const e = new Error('Conferma richiesta: sei già loggato a Claude. Premi "Continua" per confermare e procedere.');
+    e.alreadyLoggedIn = true;
+    e.email = email;
+    throw e;
   }
+
   sendLog('Apro Terminale per il login Claude (browser OAuth)...', mainWin);
 
   if (IS_MAC) {
-    // osascript apre Terminal.app con `claude` già digitato e in esecuzione.
-    // Claude rileva che non sei loggato e apre automaticamente il browser per OAuth.
     try {
       await run('osascript', [
         '-e', 'tell application "Terminal" to activate',
@@ -483,16 +579,12 @@ async function step4_login() {
       ], { ignoreError: true });
     } catch (_) {}
   } else if (IS_WIN) {
-    // Apre PowerShell con `claude` interattivo
     try {
       await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', 'claude'],
         { ignoreError: true, shell: false });
     } catch (_) {}
   }
 
-  // Notifica la UI: serve azione utente. Restiamo in attesa: la UI mostrerà
-  // un overlay "completa il login" e l'utente premerà "Continua" che farà
-  // ripartire questo step. Senza login NON si va avanti.
   throw new Error('Login richiesto: completa l\'accesso a Claude nel browser appena aperto, poi premi "Continua".');
 }
 
