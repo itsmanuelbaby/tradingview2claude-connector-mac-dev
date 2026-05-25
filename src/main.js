@@ -460,16 +460,20 @@ ipcMain.handle('claude:get-account', () => getClaudeAccount());
 // IPC per la dashboard: apri terminale per fare login a Claude
 // (chiamato dal toast "non loggato")
 ipcMain.on('open-claude-login-terminal', async () => {
+  // Path assoluto (stesso motivo di step4_login): claude potrebbe non
+  // essere nel $PATH della shell utente.
+  const claudeBin = await findClaude();
+  const claudeCmd = claudeBin || 'claude';
   if (IS_MAC) {
     try {
       await run('osascript', [
         '-e', 'tell application "Terminal" to activate',
-        '-e', 'tell application "Terminal" to do script "claude"',
+        '-e', `tell application "Terminal" to do script "${claudeCmd}"`,
       ], { ignoreError: true });
     } catch (_) {}
   } else if (IS_WIN) {
     try {
-      await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', 'claude'],
+      await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', claudeCmd],
         { ignoreError: true, shell: false });
     } catch (_) {}
   }
@@ -571,16 +575,22 @@ async function step4_login() {
 
   sendLog('Apro Terminale per il login Claude (browser OAuth)...', mainWin);
 
+  // PATH ASSOLUTO al binario: l'installer Anthropic mette claude in
+  // ~/.local/bin/ che NON è nel $PATH di default della shell zsh su molti Mac.
+  // Se passassimo solo "claude" il Terminale risponderebbe "command not found".
+  const claudeBin = await findClaude();
+  const claudeCmd = claudeBin || 'claude';
+
   if (IS_MAC) {
     try {
       await run('osascript', [
         '-e', 'tell application "Terminal" to activate',
-        '-e', 'tell application "Terminal" to do script "claude"',
+        '-e', `tell application "Terminal" to do script "${claudeCmd}"`,
       ], { ignoreError: true });
     } catch (_) {}
   } else if (IS_WIN) {
     try {
-      await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', 'claude'],
+      await run('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoExit', '-Command', claudeCmd],
         { ignoreError: true, shell: false });
     } catch (_) {}
   }
