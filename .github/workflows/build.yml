@@ -57,10 +57,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # dmgbuild (bundlato in electron-builder 24) gira col python DI SISTEMA del
+      # runner. Le immagini GitHub sono passate a Python 3.14, che rompe il vecchio
+      # mac_alias/biplist → FileNotFoundError su .background/background.tiff durante
+      # la creazione del DMG. Fissiamo Python 3.12 e lo forziamo via PYTHON_PATH,
+      # che electron-builder 24 legge direttamente (dmg.ts:306).
+      - name: Pin Python 3.12 per dmgbuild
+        id: py
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Build Mac DMG
         run: npm run dist-mac
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PYTHON_PATH: ${{ steps.py.outputs.python-path }}
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4

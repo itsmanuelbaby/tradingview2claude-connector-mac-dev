@@ -97,10 +97,13 @@ Repo prod (v1.0, intoccata): repo separata, NON modificare.
 - **Feature-detect flag:** i flag recenti (`--debug-file`, `--fallback-model`) si aggiungono solo se compaiono in `claude --help` (cache per binario).
 - **DA FARE per chiudere:** rebuild DMG (CI), aggiornare asset su release, e far girare al cliente il comando di diagnosi (`claude ... < /dev/null`) per confermare la causa esatta (stdin vs limite Opus vs rete).
 
-### CI (2026-08-01) — build fallita per dmgbuild, pin runner
-- Il primo build del fix (run 30707509312) è fallito NON per il codice ma allo step "Build Mac DMG": `dmgbuild` (Python) → `FileNotFoundError .background/background.tiff`. Causa: `macos-latest` aggiornato (Darwin 25 / Node 24) rompe electron-builder 24 + electron 28.
-- **Fix:** `runs-on: macos-latest` → `runs-on: macos-14` in `.github/workflows/build.yml`. Non toccato il blocco `dmg` (vietato da CLAUDE.md).
-- Nota: la CI carica i DMG solo come artifact `installer-mac`; NON aggiorna la release. Per distribuire ai clienti: scaricare l'artifact e `gh release upload v1.0.0 <dmg> --clobber`.
+### CI (2026-08-01) — build DMG fallita: Python 3.14 sul runner rompe dmgbuild
+- Sintomo: step "Build Mac DMG" → `dmgbuild core.py:257 Alias.for_file(background_file)` → `FileNotFoundError .background/background.tiff` + `hdiutil: attach failed - no mountable file systems`. Falliva su `macos-latest` E `macos-14`.
+- **Causa root (verificata con ricerca sugli issue e sui sorgenti electron-builder):** electron-builder 24.13.3 esegue il suo `dmgbuild` bundlato col **python di sistema del runner**. A metà 2026 le immagini GitHub sono passate a **Python 3.14**, che rompe il vecchio `mac_alias`/`biplist` di dmgbuild → l'alias dello sfondo di default fallisce. Non è un problema di config: il repo prod buildò a maggio con config identica (solo il Python del runner è cambiato). `"dmg": {"background": null}` NON aiuta su v24 (torna allo sfondo di default → stesso errore).
+- **Fix applicato (CI-only, nessuna modifica a package.json):** in `.github/workflows/build.yml`, step `actions/setup-python@v5` con `python-version: '3.12'` (id `py`) prima del build, e `PYTHON_PATH: ${{ steps.py.outputs.python-path }}` nell'env dello step "Build Mac DMG" (electron-builder 24 legge PYTHON_PATH direttamente). NON usare Python 3.13/3.14.
+- Runner: lasciato pinnato a `macos-14` come base stabile (non era la causa del fail, ma è un ambiente più prevedibile di `macos-latest`).
+- Fix di lungo termine (separato, non ora): upgrade a electron-builder 26.15.3 (bundla il proprio Python per dmgbuild → indipendente dal runner). Major bump 24→26 con breaking changes: richiede retest firma/notarizzazione.
+- Nota distribuzione: la CI carica i DMG solo come artifact `installer-mac`; NON aggiorna la release. Per i clienti: scaricare l'artifact e `gh release upload v1.0.0 <dmg> --clobber`.
 - NB storico: lo stato git del repo dev era rotto (index.lock orfano del 15/06, indice vuoto) — riparato con `rm .git/index.lock` + `git reset` (working tree intatto).
 
 ### In attesa
