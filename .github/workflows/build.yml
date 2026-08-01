@@ -8,7 +8,10 @@ on:
 
 jobs:
   build-mac:
-    runs-on: macos-latest
+    # Pin a macos-14: su macos-latest (immagine aggiornata a Darwin 25/Node 24)
+    # dmgbuild fallisce con FileNotFoundError su .background/background.tiff.
+    # macos-14 è l'ambiente stabile per electron-builder 24 + electron 28.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 

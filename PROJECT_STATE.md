@@ -95,7 +95,13 @@ Repo prod (v1.0, intoccata): repo separata, NON modificare.
   6. Bug latente `stripLessons`: `gotText` ora si attiva solo con testo VISIBILE (un messaggio di soli marker non conta come "successo vuoto"); `saveNote` non salva più note vuote.
   7. `humanizeError` ampliato (401/oauth/token expired → invito a `/login`; proxy/firewall; usage limit).
 - **Feature-detect flag:** i flag recenti (`--debug-file`, `--fallback-model`) si aggiungono solo se compaiono in `claude --help` (cache per binario).
-- **DA FARE per chiudere:** rebuild DMG (CI), aggiornare asset su release, e far girare al cliente il comando di diagnosi (`claude ... < /dev/null`) per confermare la causa esatta (stdin vs limite Opus vs rete). NB: stato git del repo dev anomalo (tutti i file staged come `D` + untracked) da sistemare prima del commit.
+- **DA FARE per chiudere:** rebuild DMG (CI), aggiornare asset su release, e far girare al cliente il comando di diagnosi (`claude ... < /dev/null`) per confermare la causa esatta (stdin vs limite Opus vs rete).
+
+### CI (2026-08-01) — build fallita per dmgbuild, pin runner
+- Il primo build del fix (run 30707509312) è fallito NON per il codice ma allo step "Build Mac DMG": `dmgbuild` (Python) → `FileNotFoundError .background/background.tiff`. Causa: `macos-latest` aggiornato (Darwin 25 / Node 24) rompe electron-builder 24 + electron 28.
+- **Fix:** `runs-on: macos-latest` → `runs-on: macos-14` in `.github/workflows/build.yml`. Non toccato il blocco `dmg` (vietato da CLAUDE.md).
+- Nota: la CI carica i DMG solo come artifact `installer-mac`; NON aggiorna la release. Per distribuire ai clienti: scaricare l'artifact e `gh release upload v1.0.0 <dmg> --clobber`.
+- NB storico: lo stato git del repo dev era rotto (index.lock orfano del 15/06, indice vuoto) — riparato con `rm .git/index.lock` + `git reset` (working tree intatto).
 
 ### In attesa
 - Feedback dal cliente test (Riccardo).

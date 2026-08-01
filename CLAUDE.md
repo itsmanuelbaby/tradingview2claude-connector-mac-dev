@@ -31,7 +31,7 @@ Queste regole valgono per **ogni** modifica al codice di TradingView2Claude Conn
 
 ## Build CI
 
-- Workflow `macos-latest`, deve produrre 2 DMG (`-arm64` e `-x64`) con artifactName che contiene `-Dev-`.
+- Workflow su `macos-14` (pinnato il 2026-08-01: `macos-latest` passò a Darwin 25/Node 24 e dmgbuild rompe sul `.background/background.tiff`). Deve produrre 2 DMG (`-arm64` e `-x64`) con artifactName che contiene `-Dev-`.
 - Step "Setup bundled-mcp" deve: clonare LewisWJackson/tradingview-mcp-jackson, applicare il `sed` patch per accettare target `webview` oltre a `page`, `npm install`, rimuovere `.git`.
 - Mai aggiungere `window` o `backgroundColor` al blocco `dmg` in package.json (fallisce per .DS_Store).
 
